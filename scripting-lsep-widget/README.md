@@ -12,8 +12,18 @@
 
 ## 安装
 
+### 远程安装（推荐）
+
+在安装了 Scripting App 的 iPhone 上打开下面的链接：
+
+[一键安装乐电通电费小组件](https://scripting.fun/import_scripts?urls=%5B%22https%3A%2F%2Fraw.githubusercontent.com%2Fyourswoo%2Fsurge-module%2Frefs%2Fheads%2Fmodules%2Flsep-electricity-widget.scripting%22%5D)
+
+安装完成后运行一次“乐电通电费”，填写账户信息并保存。安装包内已配置每日检查一次远程更新。
+
+### 手动安装
+
 1. 在 Scripting App 中新建一个脚本项目，例如“乐电通电费”。
-2. 将本目录的 `index.tsx` 和 `widget.tsx` 放入该项目，覆盖同名文件。
+2. 将本目录的 `index.tsx`、`widget.tsx` 和 `script.json` 放入该项目，覆盖同名文件。
 3. 在 Scripting 中运行一次项目，填写账户信息并保存。
 4. 在 iOS 主屏幕添加 Scripting 小组件，长按编辑并选择该脚本。
 

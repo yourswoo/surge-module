@@ -1,0 +1,17 @@
+{
+  "name": "乐电通电费",
+  "icon": "bolt.fill",
+  "color": "#30D158",
+  "version": "1.0.0",
+  "description": "LSEP electricity balance widget for iOS Scripting.",
+  "localizedNames": {
+    "zh-Hans": "乐电通电费"
+  },
+  "localizedDescriptions": {
+    "zh-Hans": "在 iOS 小组件中显示乐电通单户或多户电费余额。"
+  },
+  "remoteResource": {
+    "url": "https://raw.githubusercontent.com/yourswoo/surge-module/refs/heads/modules/lsep-electricity-widget.scripting",
+    "autoUpdateInterval": 86400
+  }
+}
