@@ -9,10 +9,10 @@
 DOMAIN-SUFFIX,wegist.cn,DIRECT
 
 [Panel]
-lsep-balance-panel = script-name=lsep-balance-panel
+lsep-balance-panel = script-name=lsep-balance-panel, update-interval=540
 
 [Script]
-# 面板:打开 Surge 首页即实时查询(多户并发),15 分钟自动刷新;单户显示详细信息,多户逐行聚合
+# 面板:打开 Surge 首页即实时查询(多户并发),9 分钟自动刷新;单户显示详细信息,多户逐行聚合
 lsep-balance-panel = type=generic, timeout=20, script-path=https://raw.githubusercontent.com/yourswoo/surge-module/refs/heads/modules/lsep-balance.js, argument=mode=panel
 
 # 每日提醒:默认每天 09:00,在模块参数 cronexp 里改时间(改后需重新加载模块);需 Surge 保持在后台运行
