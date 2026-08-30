@@ -1,18 +1,18 @@
 #!name=电费余额监控(乐电通)
 #!desc=面板实时查询电费余额（支持多户）；每天定时推送；微信打开缴费页时自动抓取账户配置、Cookie、UA 与余额。户号、Token、OpenID 等信息统一在 BoxJS 中管理。
 #!category=Utility
-#!arguments=cronexp:0 9 * * *
-#!arguments-desc=cronexp: 每日提醒时间，五段“分 时 日 月 周”，默认 0 9 * * *；改后需重新加载模块生效。户号、Token、OpenID、户名、提醒阈值和标题请在 BoxJS 的“乐电通电费”中编辑，也可通过微信缴费页自动抓取。
+#!arguments=panel_refresh:540,cronexp:0 9 * * *
+#!arguments-desc=panel_refresh: 面板自动刷新间隔，单位为秒；默认 540（9 分钟），填 -1 关闭自动刷新。\ncronexp: 每日提醒时间，五段“分 时 日 月 周”，默认 0 9 * * *；改后需重新加载模块生效。\n户号、Token、OpenID、户名、提醒阈值和标题请在 BoxJS 的“乐电通电费”中编辑，也可通过微信缴费页自动抓取。
 
 [Rule]
 # 脚本查询与微信访问保持一致的直连出口(http 明文也不该走代理)
 DOMAIN-SUFFIX,wegist.cn,DIRECT
 
 [Panel]
-lsep-balance-panel = script-name=lsep-balance-panel, update-interval=540
+lsep-balance-panel = script-name=lsep-balance-panel, update-interval={{{panel_refresh}}}
 
 [Script]
-# 面板:打开 Surge 首页即实时查询(多户并发),9 分钟自动刷新;单户显示详细信息,多户逐行聚合
+# 面板:打开 Surge 首页即实时查询(多户并发),刷新间隔由模块参数控制;单户显示详细信息,多户逐行聚合
 lsep-balance-panel = type=generic, timeout=20, script-path=https://raw.githubusercontent.com/yourswoo/surge-module/refs/heads/modules/lsep-balance.js, argument=mode=panel
 
 # 每日提醒:默认每天 09:00,在模块参数 cronexp 里改时间(改后需重新加载模块);需 Surge 保持在后台运行
