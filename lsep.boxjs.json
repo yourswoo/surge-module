@@ -9,9 +9,57 @@
       "name": "乐电通电费",
       "keys": [
         "lsep_balance_cookie",
-        "lsep_balance_ua"
+        "lsep_balance_ua",
+        "lsep_balance_token",
+        "lsep_balance_number",
+        "lsep_balance_openid",
+        "lsep_balance_wechaId",
+        "lsep_balance_label",
+        "lsep_balance_threshold",
+        "lsep_balance_title",
+        "lsep_balance_capnotify",
+        "lsep_balance_debug"
       ],
       "settings": [
+        {
+          "id": "lsep_balance_number",
+          "name": "电费户号",
+          "val": "",
+          "type": "textarea",
+          "rows": 2,
+          "desc": "可自动抓取；多户用英文逗号分隔，并与下方配置按顺序对应"
+        },
+        {
+          "id": "lsep_balance_token",
+          "name": "公司 Token",
+          "val": "",
+          "type": "textarea",
+          "rows": 2,
+          "desc": "可自动抓取；单值对所有户广播，多值用英文逗号分隔"
+        },
+        {
+          "id": "lsep_balance_openid",
+          "name": "微信 OpenID",
+          "val": "",
+          "type": "textarea",
+          "rows": 2,
+          "desc": "可从缴费页的 wecha_id 自动抓取；多户用英文逗号分隔"
+        },
+        {
+          "id": "lsep_balance_wechaId",
+          "name": "微信 wechaId",
+          "val": "",
+          "type": "textarea",
+          "rows": 2,
+          "desc": "通常会与 OpenID 自动同步，也可手动填写"
+        },
+        {
+          "id": "lsep_balance_label",
+          "name": "户名标签",
+          "val": "",
+          "type": "text",
+          "desc": "例如：我家,父母家"
+        },
         {
           "id": "lsep_balance_cookie",
           "name": "共享 Cookie",
@@ -27,6 +75,34 @@
           "type": "textarea",
           "rows": 4,
           "desc": "打开微信缴费页时自动抓取"
+        },
+        {
+          "id": "lsep_balance_threshold",
+          "name": "低余额阈值",
+          "val": "20",
+          "type": "text",
+          "desc": "单位：元；填 0 可关闭低余额判断"
+        },
+        {
+          "id": "lsep_balance_title",
+          "name": "通知标题",
+          "val": "电费余额",
+          "type": "text",
+          "desc": "面板和通知使用的标题"
+        },
+        {
+          "id": "lsep_balance_capnotify",
+          "name": "抓取更新通知",
+          "val": "1",
+          "type": "text",
+          "desc": "1 开启，0 关闭"
+        },
+        {
+          "id": "lsep_balance_debug",
+          "name": "调试日志",
+          "val": "0",
+          "type": "text",
+          "desc": "1 开启，0 关闭"
         }
       ]
     }
