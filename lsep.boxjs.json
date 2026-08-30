@@ -1,0 +1,34 @@
+{
+  "id": "lsep.balance",
+  "name": "乐电通",
+  "author": "Yong",
+  "icon": "https://yong.ing/ldt.PNG",
+  "apps": [
+    {
+      "id": "lsep_balance",
+      "name": "乐电通电费",
+      "keys": [
+        "lsep_balance_cookie",
+        "lsep_balance_ua"
+      ],
+      "settings": [
+        {
+          "id": "lsep_balance_cookie",
+          "name": "共享 Cookie",
+          "val": "",
+          "type": "textarea",
+          "rows": 3,
+          "desc": "所有户号共用。格式：PHPSESSID=xxx; tgw_l7_route=xxx"
+        },
+        {
+          "id": "lsep_balance_ua",
+          "name": "微信 User-Agent",
+          "val": "",
+          "type": "textarea",
+          "rows": 4,
+          "desc": "打开微信缴费页时自动抓取"
+        }
+      ]
+    }
+  ]
+}
