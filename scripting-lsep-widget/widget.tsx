@@ -9,6 +9,7 @@ import {
   Text,
   VStack,
   Widget,
+  modifiers,
 } from "scripting"
 
 const HOST = "http://lsep.wegist.cn"
@@ -262,25 +263,160 @@ function formatMoney(value: number): string {
   return (Math.round(value * 100) / 100).toFixed(2)
 }
 
-function formatTime(timestamp: number): string {
-  if (!timestamp) return "未知"
-  const date = new Date(timestamp)
-  const pad = (value: number) => String(value).padStart(2, "0")
-  return `${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`
+type Theme = {
+  cardBg: any
+  pageText: any
+  mutedText: any
 }
 
-function statusColor(result: DisplayResult, threshold: number): string {
-  if (!result.info || result.source === "none") return "systemGray"
-  if (result.info.owe > 0) return "systemRed"
-  if (threshold > 0 && result.info.prepay < threshold) return "systemOrange"
-  return result.source === "live" ? "systemGreen" : "systemGray"
+type RowVisual = {
+  color: string
+  amount: string
+  status: string
 }
 
-function balanceText(result: DisplayResult): string {
-  if (!result.info) return "暂不可用"
-  return result.info.owe > 0
-    ? `欠费 ¥${formatMoney(result.info.owe)}`
-    : `¥${formatMoney(result.info.prepay)}`
+const THEME: Theme = {
+  cardBg: { light: "#FFFFFF", dark: "#1C1C1E" },
+  pageText: { light: "#111827", dark: "#FFFFFF" },
+  mutedText: { light: "#6B7280", dark: "#A1A1A6" },
+}
+
+function shortNumber(number: string): string {
+  if (number.length <= 6) return number
+  return `${number.slice(0, 4)} · ${number.slice(-4)}`
+}
+
+function latestUpdate(results: DisplayResult[]): number {
+  const times = results.map(result => result.updatedAt).filter(time => time > 0)
+  return times.length ? Math.max(...times) : 0
+}
+
+function updateLabel(time: number): string {
+  if (!time) return "等待首次查询"
+  const diffMinutes = Math.max(0, Math.floor((Date.now() - time) / 60000))
+  if (diffMinutes < 1) return "刚刚更新"
+  if (diffMinutes < 60) return `${diffMinutes} 分钟前更新`
+  const date = new Date(time)
+  const hour = String(date.getHours()).padStart(2, "0")
+  const minute = String(date.getMinutes()).padStart(2, "0")
+  return `更新于 ${hour}:${minute}`
+}
+
+function queryStatusColor(results: DisplayResult[]): string {
+  if (!results.length || results.some(result => result.source !== "live")) return "#FF9F0A"
+  return "#30D158"
+}
+
+function rowVisual(result: DisplayResult, threshold: number): RowVisual {
+  if (!result.info) {
+    return { color: "#8E8E93", amount: "¥ --", status: "等待查询" }
+  }
+  if (result.info.owe > 0) {
+    return { color: "#FF453A", amount: `¥${formatMoney(result.info.owe)}`, status: "欠费" }
+  }
+  if (threshold > 0 && result.info.prepay < threshold) {
+    return { color: "#FF9F0A", amount: `¥${formatMoney(result.info.prepay)}`, status: "余额偏低" }
+  }
+  return {
+    color: result.source === "live" ? "#30D158" : "#8E8E93",
+    amount: `¥${formatMoney(result.info.prepay)}`,
+    status: result.source === "live" ? "余额正常" : "缓存数据",
+  }
+}
+
+function Header({ results, compact = false }: { results: DisplayResult[]; compact?: boolean }) {
+  const iconSize = compact ? 25 : 30
+  return (
+    <HStack alignment="center" spacing={7}>
+      <Image
+        imageUrl="https://yong.ing/ldt.PNG"
+        resizable
+        scaleToFit
+        frame={{ width: iconSize, height: iconSize }}
+      />
+      <Text
+        modifiers={modifiers()
+          .font(compact ? 11 : 12)
+          .foregroundStyle(THEME.pageText)
+          .fontWeight("semibold") as any}
+      >
+        乐电通
+      </Text>
+      <Spacer />
+      <HStack alignment="center" spacing={5}>
+        <Text modifiers={modifiers().font(compact ? 11 : 12).foregroundStyle(queryStatusColor(results) as any) as any}>
+          ●
+        </Text>
+        {!compact ? (
+          <Text modifiers={modifiers().font(9).foregroundStyle(THEME.mutedText) as any}>
+            {updateLabel(latestUpdate(results))}
+          </Text>
+        ) : null}
+      </HStack>
+    </HStack>
+  )
+}
+
+function SmallRow({ result, threshold }: { result: DisplayResult; threshold: number }) {
+  const visual = rowVisual(result, threshold)
+  return (
+    <HStack
+      alignment="center"
+      spacing={7}
+      modifiers={modifiers()
+        .padding({ leading: 9, trailing: 9, top: 7, bottom: 7 })
+        .background({ style: THEME.cardBg, shape: { type: "rect", cornerRadius: 12 } } as any)}
+    >
+      <VStack
+        modifiers={modifiers()
+          .frame({ width: 3, height: 25 })
+          .background({ style: visual.color as any, shape: { type: "rect", cornerRadius: 999 } } as any)}
+      />
+      <VStack alignment="leading" spacing={1}>
+        <Text modifiers={modifiers().font(11).foregroundStyle(THEME.pageText).fontWeight("semibold") as any}>
+          {result.account.label}
+        </Text>
+        <Text modifiers={modifiers().font(8).foregroundStyle(THEME.mutedText) as any}>
+          {visual.status}
+        </Text>
+      </VStack>
+      <Spacer />
+      <Text modifiers={modifiers().font(11).foregroundStyle(visual.color as any).fontWeight("bold") as any}>
+        {visual.amount}
+      </Text>
+    </HStack>
+  )
+}
+
+function MediumRow({ result, threshold }: { result: DisplayResult; threshold: number }) {
+  const visual = rowVisual(result, threshold)
+  return (
+    <HStack
+      alignment="center"
+      spacing={9}
+      modifiers={modifiers()
+        .padding({ leading: 11, trailing: 11, top: 7, bottom: 7 })
+        .background({ style: THEME.cardBg, shape: { type: "rect", cornerRadius: 13 } } as any)}
+    >
+      <VStack
+        modifiers={modifiers()
+          .frame({ width: 4, height: 27 })
+          .background({ style: visual.color as any, shape: { type: "rect", cornerRadius: 999 } } as any)}
+      />
+      <VStack alignment="leading" spacing={2}>
+        <Text modifiers={modifiers().font(12).foregroundStyle(THEME.pageText).fontWeight("semibold") as any}>
+          {result.account.label}
+        </Text>
+        <Text modifiers={modifiers().font(9).foregroundStyle(THEME.mutedText) as any}>
+          户号 {shortNumber(result.account.number)} · {visual.status}
+        </Text>
+      </VStack>
+      <Spacer />
+      <Text modifiers={modifiers().font(16).foregroundStyle(visual.color as any).fontWeight("bold") as any}>
+        {visual.amount}
+      </Text>
+    </HStack>
+  )
 }
 
 function EmptyWidget({ message }: { message: string }) {
@@ -288,44 +424,23 @@ function EmptyWidget({ message }: { message: string }) {
     <VStack
       alignment="leading"
       spacing={8}
-      padding={14}
-      frame={{ maxWidth: "infinity", maxHeight: "infinity" }}
-      widgetBackground={{ light: "#F4F7FF", dark: "#111827" }}
+      modifiers={modifiers().padding({ leading: 11, trailing: 11, top: 10, bottom: 10 })}
     >
-      <Image systemName="bolt.slash.fill" foregroundStyle="systemOrange" />
-      <Text font="headline">乐电通</Text>
-      <Text font="caption" foregroundStyle="secondaryLabel">{message}</Text>
+      <Header results={[]} />
+      <HStack
+        modifiers={modifiers()
+          .padding(11)
+          .background({ style: THEME.cardBg, shape: { type: "rect", cornerRadius: 13 } } as any)}
+      >
+        <Text modifiers={modifiers().font(10).foregroundStyle(THEME.mutedText) as any}>{message}</Text>
+      </HStack>
     </VStack>
   )
 }
 
-function AccountRow({ result, threshold }: { result: DisplayResult; threshold: number }) {
-  return (
-    <HStack spacing={8}>
-      <Image
-        systemName={result.info?.owe ? "exclamationmark.bolt.fill" : "bolt.fill"}
-        foregroundStyle={statusColor(result, threshold)}
-      />
-      <VStack alignment="leading" spacing={2}>
-        <Text font="headline" lineLimit={1}>{result.account.label}</Text>
-        <Text font="caption" foregroundStyle="secondaryLabel" lineLimit={1}>
-          {result.info?.name || `户号 ${result.account.number}`}
-        </Text>
-      </VStack>
-      <Spacer />
-      <VStack alignment="trailing" spacing={2}>
-        <Text font="headline" foregroundStyle={statusColor(result, threshold)}>{balanceText(result)}</Text>
-        <Text font="caption" foregroundStyle="secondaryLabel">
-          {result.source === "live" ? "实时" : result.source === "cache" ? "缓存" : "失败"}
-        </Text>
-      </VStack>
-    </HStack>
-  )
-}
-
 function AccessoryWidget({ result, threshold }: { result: DisplayResult; threshold: number }) {
-  const circular = Widget.family === "accessoryCircular"
-  return circular ? (
+  const visual = rowVisual(result, threshold)
+  return Widget.family === "accessoryCircular" ? (
     <VStack spacing={1}>
       <Image systemName="bolt.fill" />
       <Text font="caption" lineLimit={1}>{result.info ? formatMoney(result.info.prepay) : "--"}</Text>
@@ -333,65 +448,47 @@ function AccessoryWidget({ result, threshold }: { result: DisplayResult; thresho
   ) : (
     <VStack alignment="leading" spacing={2}>
       <Text font="caption">{result.account.label}</Text>
-      <Text font="headline" foregroundStyle={statusColor(result, threshold)}>{balanceText(result)}</Text>
-      <Text font="caption">{formatTime(result.updatedAt)}</Text>
+      <Text font="headline" foregroundStyle={visual.color as any}>{visual.amount}</Text>
+      <Text font="caption">{visual.status}</Text>
     </VStack>
   )
 }
 
 function BalanceWidget({ results, settings }: { results: DisplayResult[]; settings: PublicSettings }) {
   const family = Widget.family
-  const first = results[0]
   if (family === "accessoryCircular" || family === "accessoryRectangular") {
-    return <AccessoryWidget result={first} threshold={settings.threshold} />
+    return <AccessoryWidget result={results[0]} threshold={settings.threshold} />
   }
 
   const small = family === "systemSmall"
-  const limit = small ? 1 : family === "systemLarge" ? 8 : 4
+  const limit = small ? 2 : family === "systemLarge" ? 7 : 4
   const visible = results.slice(0, limit)
-  const overallColor = results.some(result => result.info?.owe)
-    ? "systemRed"
-    : results.some(result => result.info && settings.threshold > 0 && result.info.prepay < settings.threshold)
-      ? "systemOrange"
-      : "systemGreen"
 
-  return (
+  return small ? (
     <VStack
       alignment="leading"
-      spacing={small ? 7 : 9}
-      padding={14}
-      frame={{ maxWidth: "infinity", maxHeight: "infinity" }}
-      widgetBackground={{ light: "#F4F7FF", dark: "#111827" }}
+      spacing={8}
+      modifiers={modifiers().padding({ leading: 9, trailing: 9, top: 9, bottom: 9 })}
     >
-      <HStack>
-        <Image systemName="bolt.circle.fill" foregroundStyle={overallColor} />
-        <Text font="headline">{settings.title}</Text>
-        <Spacer />
-        <Text font="caption" foregroundStyle="secondaryLabel">{formatTime(Date.now())}</Text>
-      </HStack>
-
-      {small ? (
-        <VStack alignment="leading" spacing={5}>
-          <Text font="caption" foregroundStyle="secondaryLabel">{first.account.label}</Text>
-          <Text font="largeTitle" foregroundStyle={statusColor(first, settings.threshold)} lineLimit={1}>
-            {balanceText(first)}
-          </Text>
-          <Text font="caption" foregroundStyle="secondaryLabel" lineLimit={2}>
-            {first.info?.owe
-              ? "账户已欠费，请及时充值"
-              : first.source === "cache"
-                ? `缓存于 ${formatTime(first.updatedAt)}`
-                : `抄表 ${formatTime(first.info?.meterTime ?? 0)}`}
-          </Text>
-        </VStack>
-      ) : visible.map(result => (
-        <AccountRow key={result.account.number} result={result} threshold={settings.threshold} />
-      ))}
-
-      <Spacer />
-      <Text font="caption" foregroundStyle="secondaryLabel">
-        {results.some(result => result.source !== "live") ? "部分数据来自缓存 · " : ""}下次刷新由 iOS 安排
-      </Text>
+      <Header results={results} compact />
+      <VStack alignment="leading" spacing={6}>
+        {visible.map(result => (
+          <SmallRow key={result.account.number} result={result} threshold={settings.threshold} />
+        ))}
+      </VStack>
+    </VStack>
+  ) : (
+    <VStack
+      alignment="leading"
+      spacing={8}
+      modifiers={modifiers().padding({ leading: 11, trailing: 11, top: 10, bottom: 10 })}
+    >
+      <Header results={results} />
+      <VStack alignment="leading" spacing={6}>
+        {visible.map(result => (
+          <MediumRow key={result.account.number} result={result} threshold={settings.threshold} />
+        ))}
+      </VStack>
     </VStack>
   )
 }
