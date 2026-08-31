@@ -12,6 +12,7 @@ import {
   Widget,
   useState,
 } from "scripting"
+import { buildAccounts, formatMoney, queryAccount } from "./lsep-api"
 import { readCookieFromSurge } from "./surge"
 
 const SECRET_KEY = "lsep_widget_secrets_v1"
@@ -90,6 +91,8 @@ function SettingsView() {
   const [threshold, setThreshold] = useState(String(savedSettings.threshold))
   const [refreshMinutes, setRefreshMinutes] = useState(String(savedSettings.refreshMinutes))
   const [message, setMessage] = useState("")
+  const [queryOutput, setQueryOutput] = useState("")
+  const [querying, setQuerying] = useState(false)
 
   function save() {
     if (!numbers.trim() || !tokens.trim() || !openids.trim()) {
@@ -145,6 +148,69 @@ function SettingsView() {
     }
   }
 
+  async function queryNow() {
+    if (querying) return
+
+    const accounts = buildAccounts({
+      numbers,
+      tokens,
+      openids,
+      wechaIds,
+      labels,
+      title: title.trim() || "电费余额",
+    })
+    if (!accounts.length || accounts.some(account => !account.number || !account.token || !account.openid)) {
+      setQueryOutput("查询失败：请检查户号、Token 和 OpenID，多户字段需按相同顺序对应。")
+      return
+    }
+
+    setQuerying(true)
+    setMessage("正在即时查询…")
+    setQueryOutput("")
+
+    let activeCookie = cookie.trim()
+    let activeUserAgent = userAgent.trim() || DEFAULT_UA
+    const lines: string[] = []
+
+    if (surgeApiEnabled) {
+      try {
+        const synced = await readCookieFromSurge({
+          enabled: true,
+          apiUrl: surgeApiUrl,
+          apiKey: surgeApiKey,
+        })
+        activeCookie = synced.cookie || activeCookie
+        activeUserAgent = synced.userAgent || activeUserAgent
+        setCookie(activeCookie)
+        if (synced.userAgent) setUserAgent(synced.userAgent)
+        lines.push("Surge Cookie：同步成功")
+      } catch (error) {
+        lines.push(`Surge Cookie：同步失败，已使用当前 Cookie\n原因：${String((error as any)?.message ?? error)}`)
+      }
+    }
+
+    for (const account of accounts) {
+      try {
+        const result = await queryAccount(account, activeCookie, activeUserAgent)
+        activeCookie = result.cookie || activeCookie
+        const balance = result.info.owe > 0
+          ? `欠费 ¥${formatMoney(result.info.owe)}`
+          : `余额 ¥${formatMoney(result.info.prepay)}`
+        const meterTime = result.info.meterTime
+          ? new Date(result.info.meterTime).toLocaleString()
+          : "接口未提供"
+        lines.push(`${account.label}（${account.number}）\n${balance}\n户名：${result.info.name || "未提供"}\n电表更新时间：${meterTime}`)
+      } catch (error) {
+        lines.push(`${account.label}（${account.number}）\n查询失败：${String((error as any)?.message ?? error)}`)
+      }
+    }
+
+    if (activeCookie) setCookie(activeCookie)
+    setQueryOutput(lines.join("\n\n"))
+    setMessage("即时查询完成；如 Cookie 有更新，请点击保存")
+    setQuerying(false)
+  }
+
   return (
     <NavigationStack>
       <Form navigationTitle="乐电通小组件">
@@ -188,7 +254,7 @@ function SettingsView() {
           header={<Text>会话</Text>}
           footer={<Text>Cookie 格式：PHPSESSID=xxx; tgw_l7_route=xxx。手动 Cookie 会作为 Surge 自动同步失败时的备用值。</Text>}
         >
-          <SecureField
+          <TextField
             title="共享 Cookie"
             value={cookie}
             onChanged={setCookie}
@@ -253,6 +319,11 @@ function SettingsView() {
 
         <Section>
           <Button
+            title={querying ? "正在查询…" : "立即查询电费"}
+            systemImage="bolt.fill"
+            action={queryNow}
+          />
+          <Button
             title="保存并刷新小组件"
             systemImage="arrow.clockwise"
             action={save}
@@ -267,6 +338,12 @@ function SettingsView() {
           />
           {message ? <Text foregroundStyle="secondaryLabel">{message}</Text> : null}
         </Section>
+
+        {queryOutput ? (
+          <Section header={<Text>即时查询结果</Text>}>
+            <Text>{queryOutput}</Text>
+          </Section>
+        ) : null}
       </Form>
     </NavigationStack>
   )
