@@ -17,12 +17,15 @@ const DEFAULT_UA = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) Apple
 type LocalSettings = {
   boxJsUrl: string
   refreshMinutes: number
+  lowBalanceThreshold: number
+  criticalBalanceThreshold: number
 }
 
 type PublicSettings = {
   title: string
   labels: string
-  threshold: number
+  lowBalanceThreshold: number
+  criticalBalanceThreshold: number
   refreshMinutes: number
 }
 
@@ -42,6 +45,8 @@ function loadLocalSettings(): LocalSettings {
   return {
     boxJsUrl: "https://boxjs.com",
     refreshMinutes: 30,
+    lowBalanceThreshold: 20,
+    criticalBalanceThreshold: 10,
     ...(Storage.get<LocalSettings>(SETTINGS_KEY) ?? {}),
   }
 }
@@ -90,14 +95,17 @@ function queryStatusColor(results: DisplayResult[]): string {
   return "#30D158"
 }
 
-function rowVisual(result: DisplayResult, threshold: number): RowVisual {
+function rowVisual(result: DisplayResult, lowThreshold: number, criticalThreshold: number): RowVisual {
   if (!result.info) {
     return { color: "#8E8E93", amount: "¥ --", status: "等待查询" }
   }
   if (result.info.owe > 0) {
-    return { color: "#FF453A", amount: `¥${formatMoney(result.info.owe)}`, status: "欠费" }
+    return { color: "#FF453A", amount: `¥${formatMoney(result.info.owe)}`, status: "欠费，请及时充值" }
   }
-  if (threshold > 0 && result.info.prepay < threshold) {
+  if (criticalThreshold > 0 && result.info.prepay <= criticalThreshold) {
+    return { color: "#FF453A", amount: `¥${formatMoney(result.info.prepay)}`, status: "余额不足，请及时充值" }
+  }
+  if (lowThreshold > 0 && result.info.prepay < lowThreshold) {
     return { color: "#FF9F0A", amount: `¥${formatMoney(result.info.prepay)}`, status: "余额偏低" }
   }
   return {
@@ -140,8 +148,8 @@ function Header({ results, compact = false }: { results: DisplayResult[]; compac
   )
 }
 
-function SmallRow({ result, threshold }: { result: DisplayResult; threshold: number }) {
-  const visual = rowVisual(result, threshold)
+function SmallRow({ result, lowThreshold, criticalThreshold }: { result: DisplayResult; lowThreshold: number; criticalThreshold: number }) {
+  const visual = rowVisual(result, lowThreshold, criticalThreshold)
   return (
     <HStack
       alignment="center"
@@ -171,8 +179,8 @@ function SmallRow({ result, threshold }: { result: DisplayResult; threshold: num
   )
 }
 
-function MediumRow({ result, threshold }: { result: DisplayResult; threshold: number }) {
-  const visual = rowVisual(result, threshold)
+function MediumRow({ result, lowThreshold, criticalThreshold }: { result: DisplayResult; lowThreshold: number; criticalThreshold: number }) {
+  const visual = rowVisual(result, lowThreshold, criticalThreshold)
   return (
     <HStack
       alignment="center"
@@ -221,8 +229,8 @@ function EmptyWidget({ message }: { message: string }) {
   )
 }
 
-function AccessoryWidget({ result, threshold }: { result: DisplayResult; threshold: number }) {
-  const visual = rowVisual(result, threshold)
+function AccessoryWidget({ result, lowThreshold, criticalThreshold }: { result: DisplayResult; lowThreshold: number; criticalThreshold: number }) {
+  const visual = rowVisual(result, lowThreshold, criticalThreshold)
   return Widget.family === "accessoryCircular" ? (
     <VStack spacing={1}>
       <Image systemName="bolt.fill" />
@@ -240,7 +248,7 @@ function AccessoryWidget({ result, threshold }: { result: DisplayResult; thresho
 function BalanceWidget({ results, settings }: { results: DisplayResult[]; settings: PublicSettings }) {
   const family = Widget.family
   if (family === "accessoryCircular" || family === "accessoryRectangular") {
-    return <AccessoryWidget result={results[0]} threshold={settings.threshold} />
+    return <AccessoryWidget result={results[0]} lowThreshold={settings.lowBalanceThreshold} criticalThreshold={settings.criticalBalanceThreshold} />
   }
 
   const small = family === "systemSmall"
@@ -256,7 +264,7 @@ function BalanceWidget({ results, settings }: { results: DisplayResult[]; settin
       <Header results={results} compact />
       <VStack alignment="leading" spacing={6}>
         {visible.map(result => (
-          <SmallRow key={result.account.number} result={result} threshold={settings.threshold} />
+          <SmallRow key={result.account.number} result={result} lowThreshold={settings.lowBalanceThreshold} criticalThreshold={settings.criticalBalanceThreshold} />
         ))}
       </VStack>
     </VStack>
@@ -269,7 +277,7 @@ function BalanceWidget({ results, settings }: { results: DisplayResult[]; settin
       <Header results={results} />
       <VStack alignment="leading" spacing={6}>
         {visible.map(result => (
-          <MediumRow key={result.account.number} result={result} threshold={settings.threshold} />
+          <MediumRow key={result.account.number} result={result} lowThreshold={settings.lowBalanceThreshold} criticalThreshold={settings.criticalBalanceThreshold} />
         ))}
       </VStack>
     </VStack>
@@ -311,7 +319,8 @@ async function main() {
   const settings: PublicSettings = {
     title: runtime.title,
     labels: runtime.labels,
-    threshold: runtime.threshold,
+    lowBalanceThreshold: Math.max(localSettings.lowBalanceThreshold, localSettings.criticalBalanceThreshold),
+    criticalBalanceThreshold: Math.min(localSettings.lowBalanceThreshold, localSettings.criticalBalanceThreshold),
     refreshMinutes: localSettings.refreshMinutes,
   }
 

@@ -13,7 +13,6 @@ export type BoxJsRuntimeConfig = {
   cookie: string
   userAgent: string
   title: string
-  threshold: number
 }
 
 const KEYS = {
@@ -25,7 +24,6 @@ const KEYS = {
   cookie: "lsep_balance_cookie",
   userAgent: "lsep_balance_ua",
   title: "lsep_balance_title",
-  threshold: "lsep_balance_threshold",
 } as const
 
 function normalizeBaseUrl(value: string): string {
@@ -77,7 +75,6 @@ export async function readRuntimeConfigFromBoxJs(config: BoxJsConfig): Promise<B
   if (!cookie) missing.push(KEYS.cookie)
   if (missing.length) throw new Error(`BoxJs 配置缺失或无效：${missing.join("、")}`)
 
-  const parsedThreshold = Number(raw.threshold)
   return {
     numbers: raw.numbers,
     tokens: raw.tokens,
@@ -87,6 +84,5 @@ export async function readRuntimeConfigFromBoxJs(config: BoxJsConfig): Promise<B
     cookie,
     userAgent: raw.userAgent,
     title: raw.title || "电费余额",
-    threshold: Number.isFinite(parsedThreshold) ? Math.max(0, parsedThreshold) : 20,
   }
 }

@@ -2,7 +2,7 @@
   "name": "乐电通电费",
   "icon": "bolt.fill",
   "color": "#30D158",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "LSEP electricity widget with runtime-only BoxJs configuration reading.",
   "localizedNames": {
     "zh": "乐电通电费",
