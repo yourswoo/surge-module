@@ -8,6 +8,7 @@ import {
   fetch,
   modifiers,
 } from "scripting"
+import { readCookieFromSurge } from "./surge"
 
 const HOST = "http://lsep.wegist.cn"
 const SECRET_KEY = "lsep_widget_secrets_v1"
@@ -22,6 +23,9 @@ type SecretConfig = {
   wechaIds: string
   cookie: string
   userAgent: string
+  surgeApiEnabled: boolean
+  surgeApiUrl: string
+  surgeApiKey: string
 }
 
 type PublicSettings = {
@@ -75,7 +79,13 @@ function pick(values: string[], index: number): string {
 function loadSecrets(): SecretConfig | null {
   try {
     const raw = Keychain.get(SECRET_KEY)
-    return raw ? { userAgent: DEFAULT_UA, ...JSON.parse(raw) } : null
+    return raw ? {
+      userAgent: DEFAULT_UA,
+      surgeApiEnabled: false,
+      surgeApiUrl: "http://127.0.0.1:6171",
+      surgeApiKey: "",
+      ...JSON.parse(raw),
+    } : null
   } catch (_) {
     return null
   }
@@ -518,10 +528,25 @@ async function main() {
   const nextCache: CacheData = { items: { ...cache.items } }
   const results: DisplayResult[] = []
   let cookie = secrets.cookie || ""
+  let userAgent = secrets.userAgent || DEFAULT_UA
+
+  if (secrets.surgeApiEnabled && secrets.surgeApiKey) {
+    try {
+      const synced = await readCookieFromSurge({
+        enabled: true,
+        apiUrl: secrets.surgeApiUrl,
+        apiKey: secrets.surgeApiKey,
+      })
+      cookie = synced.cookie || cookie
+      userAgent = synced.userAgent || userAgent
+    } catch (_) {
+      // Surge 关闭、API 不可达或尚未抓取 Cookie 时继续使用钥匙串中的备用值。
+    }
+  }
 
   for (const account of accounts) {
     try {
-      const queried = await queryAccount(account, cookie, secrets.userAgent || DEFAULT_UA)
+      const queried = await queryAccount(account, cookie, userAgent)
       cookie = queried.cookie || cookie
       const updatedAt = Date.now()
       nextCache.items[account.number] = { info: queried.info, updatedAt }
@@ -539,8 +564,8 @@ async function main() {
   }
 
   Storage.set(CACHE_KEY, nextCache)
-  if (cookie && cookie !== secrets.cookie) {
-    Keychain.set(SECRET_KEY, JSON.stringify({ ...secrets, cookie }), {
+  if ((cookie && cookie !== secrets.cookie) || userAgent !== secrets.userAgent) {
+    Keychain.set(SECRET_KEY, JSON.stringify({ ...secrets, cookie, userAgent }), {
       accessibility: "first_unlock_this_device",
     })
   }

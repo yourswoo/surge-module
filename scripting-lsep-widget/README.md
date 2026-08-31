@@ -8,6 +8,7 @@
 - 欠费、低余额状态颜色
 - 查询失败时显示上次缓存
 - 自定义刷新请求间隔
+- 通过本机 Surge HTTP API 自动同步已抓取的 Cookie 与微信 UA
 - 敏感配置保存到当前脚本独立的系统钥匙串，不写入源码
 
 ## 安装
@@ -20,12 +21,12 @@
 
 安装完成后运行一次“乐电通电费”，填写账户信息并保存。安装包内已配置每日检查一次远程更新。
 
-如果安装过 `1.0.0` 或 `1.0.1` 且点击无法运行，请先删除旧的“乐电通电费”，再通过上面的链接安装 `1.0.2`。旧版存在不兼容的 Scripting API 导入，不能依赖应用内更新自行修复。
+如果安装过 `1.0.0` 或 `1.0.1` 且点击无法运行，请先删除旧的“乐电通电费”，再通过上面的链接安装最新版。旧版存在不兼容的 Scripting API 导入，不能依赖应用内更新自行修复。
 
 ### 手动安装
 
 1. 在 Scripting App 中新建一个脚本项目，例如“乐电通电费”。
-2. 将本目录的 `index.tsx`、`widget.tsx` 和 `script.json` 放入该项目，覆盖同名文件。
+2. 将本目录的 `index.tsx`、`widget.tsx`、`surge.ts` 和 `script.json` 放入该项目，覆盖同名文件。
 3. 在 Scripting 中运行一次项目，填写账户信息并保存。
 4. 在 iOS 主屏幕添加 Scripting 小组件，长按编辑并选择该脚本。
 
@@ -37,11 +38,13 @@
 
   `PHPSESSID=xxx; tgw_l7_route=xxx`
 
+- Surge 自动同步：在 Surge `[General]` 中启用 `http-api`，然后在 Scripting 中填写本机 API 地址与密钥。脚本只读取 `lsep_balance_cookie` 和 `lsep_balance_ua`，同步失败时使用手动 Cookie 或上次成功值。
+
 - 多户使用英文逗号分隔，各字段按相同顺序对应；Token/OpenID 只填一个时会广播给所有户。
 - 刷新间隔填 `0` 时不主动指定刷新时间；非零值最低按 15 分钟请求。实际刷新由 iOS WidgetKit 调度，不能保证精确准点。
 
 ## 安全说明
 
-户号、Token、OpenID、Cookie 与 UA 存在 Scripting 的每脚本独立 Keychain 中。仓库文件不包含任何真实账户值。
+户号、Token、OpenID、Cookie、UA 与 Surge API 密钥存在 Scripting 的每脚本独立 Keychain 中。仓库文件不包含任何真实账户值。Surge API 地址被限制为 `127.0.0.1` 或 `localhost`，避免把控制接口发送到外部主机。
 
 乐电通接口使用明文 HTTP。本脚本仅对固定的 `lsep.wegist.cn` 查询链路启用 Scripting 的 `allowInsecureRequest`，不会向其他域名发送账户配置。

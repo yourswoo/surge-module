@@ -10,7 +10,7 @@ from pathlib import Path
 
 BASE = Path(__file__).resolve().parent
 OUTPUT = BASE.parent / "lsep-electricity-widget.scripting"
-FILES = ("index.tsx", "widget.tsx", "script.json")
+FILES = ("index.tsx", "widget.tsx", "surge.ts", "script.json")
 
 
 def build_package() -> None:

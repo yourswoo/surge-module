@@ -8,9 +8,11 @@ import {
   SecureField,
   Text,
   TextField,
+  Toggle,
   Widget,
   useState,
 } from "scripting"
+import { readCookieFromSurge } from "./surge"
 
 const SECRET_KEY = "lsep_widget_secrets_v1"
 const SETTINGS_KEY = "lsep_widget_settings_v1"
@@ -22,6 +24,9 @@ type SecretConfig = {
   wechaIds: string
   cookie: string
   userAgent: string
+  surgeApiEnabled: boolean
+  surgeApiUrl: string
+  surgeApiKey: string
 }
 
 type PublicSettings = {
@@ -36,7 +41,13 @@ const DEFAULT_UA = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) Apple
 function readSecrets(): SecretConfig {
   try {
     const raw = Keychain.get(SECRET_KEY)
-    if (raw) return { userAgent: DEFAULT_UA, ...JSON.parse(raw) }
+    if (raw) return {
+      userAgent: DEFAULT_UA,
+      surgeApiEnabled: false,
+      surgeApiUrl: "http://127.0.0.1:6171",
+      surgeApiKey: "",
+      ...JSON.parse(raw),
+    }
   } catch (_) {}
   return {
     numbers: "",
@@ -45,6 +56,9 @@ function readSecrets(): SecretConfig {
     wechaIds: "",
     cookie: "",
     userAgent: DEFAULT_UA,
+    surgeApiEnabled: false,
+    surgeApiUrl: "http://127.0.0.1:6171",
+    surgeApiKey: "",
   }
 }
 
@@ -68,6 +82,9 @@ function SettingsView() {
   const [wechaIds, setWechaIds] = useState(savedSecrets.wechaIds)
   const [cookie, setCookie] = useState(savedSecrets.cookie)
   const [userAgent, setUserAgent] = useState(savedSecrets.userAgent)
+  const [surgeApiEnabled, setSurgeApiEnabled] = useState(savedSecrets.surgeApiEnabled)
+  const [surgeApiUrl, setSurgeApiUrl] = useState(savedSecrets.surgeApiUrl)
+  const [surgeApiKey, setSurgeApiKey] = useState(savedSecrets.surgeApiKey)
   const [title, setTitle] = useState(savedSettings.title)
   const [labels, setLabels] = useState(savedSettings.labels)
   const [threshold, setThreshold] = useState(String(savedSettings.threshold))
@@ -87,6 +104,9 @@ function SettingsView() {
       wechaIds: wechaIds.trim(),
       cookie: cookie.trim(),
       userAgent: userAgent.trim() || DEFAULT_UA,
+      surgeApiEnabled,
+      surgeApiUrl: surgeApiUrl.trim() || "http://127.0.0.1:6171",
+      surgeApiKey: surgeApiKey.trim(),
     }
     const publicSettings: PublicSettings = {
       title: title.trim() || "电费余额",
@@ -107,6 +127,22 @@ function SettingsView() {
 
     Widget.reloadAll()
     setMessage("已保存，并请求刷新小组件")
+  }
+
+  async function syncFromSurge() {
+    setMessage("正在从 Surge 读取 Cookie…")
+    try {
+      const result = await readCookieFromSurge({
+        enabled: surgeApiEnabled,
+        apiUrl: surgeApiUrl,
+        apiKey: surgeApiKey,
+      })
+      setCookie(result.cookie)
+      if (result.userAgent) setUserAgent(result.userAgent)
+      setMessage("已从 Surge 读取 Cookie，请点击保存并刷新小组件")
+    } catch (error) {
+      setMessage(String((error as any)?.message ?? error))
+    }
   }
 
   return (
@@ -150,7 +186,7 @@ function SettingsView() {
 
         <Section
           header={<Text>会话</Text>}
-          footer={<Text>Cookie 格式：PHPSESSID=xxx; tgw_l7_route=xxx。可从 Surge BoxJS 中复制；数据只保存在当前 Scripting 项目的系统钥匙串里。</Text>}
+          footer={<Text>Cookie 格式：PHPSESSID=xxx; tgw_l7_route=xxx。手动 Cookie 会作为 Surge 自动同步失败时的备用值。</Text>}
         >
           <SecureField
             title="共享 Cookie"
@@ -163,6 +199,34 @@ function SettingsView() {
             value={userAgent}
             onChanged={setUserAgent}
             prompt="留空时使用内置微信 UA"
+          />
+        </Section>
+
+        <Section
+          header={<Text>Surge 自动同步</Text>}
+          footer={<Text>HTTP API 只允许连接本机 127.0.0.1 或 localhost。API 密钥与 Cookie 都只保存在当前 Scripting 项目的系统钥匙串中。</Text>}
+        >
+          <Toggle
+            title="启用自动同步"
+            value={surgeApiEnabled}
+            onChanged={setSurgeApiEnabled}
+          />
+          <TextField
+            title="API 地址"
+            value={surgeApiUrl}
+            onChanged={setSurgeApiUrl}
+            prompt="http://127.0.0.1:6171"
+          />
+          <SecureField
+            title="API 密钥"
+            value={surgeApiKey}
+            onChanged={setSurgeApiKey}
+            prompt="Surge [General] 中 http-api 的密钥"
+          />
+          <Button
+            title="测试并读取 Cookie"
+            systemImage="arrow.triangle.2.circlepath"
+            action={syncFromSurge}
           />
         </Section>
 
