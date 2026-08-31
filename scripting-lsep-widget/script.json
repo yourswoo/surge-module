@@ -1,11 +1,8 @@
 {
   "name": "乐电通电费",
-  "entry": "index.tsx",
-  "runInApp": false,
   "icon": "bolt.fill",
-  "iconImage": null,
   "color": "#30D158",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "LSEP electricity balance widget for iOS Scripting.",
   "localizedNames": {
     "zh": "乐电通电费",
@@ -15,14 +12,6 @@
     "zh": "在 iOS 小组件中显示乐电通单户或多户电费余额。",
     "en": "Display one or more LSEP electricity balances in iOS widgets."
   },
-  "author": {
-    "name": "Yong",
-    "email": null,
-    "homepage": "https://github.com/yourswoo/surge-module"
-  },
-  "contributors": [],
-  "intentInputTypes": [],
-  "permissions": null,
   "remoteResource": {
     "url": "https://raw.githubusercontent.com/yourswoo/surge-module/refs/heads/modules/lsep-electricity-widget.scripting",
     "autoUpdateInterval": 86400

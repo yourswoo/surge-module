@@ -1,14 +1,11 @@
 import {
   HStack,
   Image,
-  Keychain,
-  Request,
-  Script,
   Spacer,
-  Storage,
   Text,
   VStack,
   Widget,
+  fetch,
   modifiers,
 } from "scripting"
 
@@ -150,11 +147,11 @@ function mergeResponseCookies(current: string, response: any): string {
 }
 
 async function request(url: string, init: any = {}): Promise<any> {
-  const response = await fetch(new Request(url, {
+  const response = await fetch(url, {
     ...init,
     allowInsecureRequest: true,
     timeout: init.timeout ?? 12,
-  }))
+  })
   const body = await response.text()
   if (!response.ok) throw new Error(`HTTP ${response.status}: ${body.slice(0, 80)}`)
   return { response, body }
@@ -508,14 +505,12 @@ async function main() {
 
   if (!secrets) {
     Widget.present(<EmptyWidget message="请先在 Scripting 中运行本项目，填写账户配置。" />, policy)
-    Script.exit()
     return
   }
 
   const accounts = buildAccounts(secrets, settings)
   if (!accounts.length || accounts.some(account => !account.number || !account.token || !account.openid)) {
     Widget.present(<EmptyWidget message="账户配置不完整，请检查户号、Token 和 OpenID。" />, policy)
-    Script.exit()
     return
   }
 
@@ -551,7 +546,6 @@ async function main() {
   }
 
   Widget.present(<BalanceWidget results={results} settings={settings} />, policy)
-  Script.exit()
 }
 
 main()
