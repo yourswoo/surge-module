@@ -8,15 +8,23 @@ import {
   modifiers,
 } from "scripting"
 import { Account, BalanceInfo, buildAccounts, formatMoney, queryAccount } from "./lsep-api"
-import { readRuntimeConfigFromBoxJs } from "./boxjs"
+import { readCookieFromSurge } from "./surge"
 
-const SETTINGS_KEY = "lsep_widget_settings_v2"
-const CACHE_KEY = "lsep_widget_cache_v2"
+const SECRET_KEY = "lsep_widget_secrets_v1"
+const SETTINGS_KEY = "lsep_widget_settings_v1"
+const CACHE_KEY = "lsep_widget_cache_v1"
 const DEFAULT_UA = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 MicroMessenger/8.0.49(0x18003123) NetType/WIFI Language/zh_CN"
 
-type LocalSettings = {
-  boxJsUrl: string
-  refreshMinutes: number
+type SecretConfig = {
+  numbers: string
+  tokens: string
+  openids: string
+  wechaIds: string
+  cookie: string
+  userAgent: string
+  surgeApiEnabled: boolean
+  surgeApiUrl: string
+  surgeApiKey: string
 }
 
 type PublicSettings = {
@@ -38,11 +46,28 @@ type CacheData = {
   items: Record<string, { info: BalanceInfo; updatedAt: number }>
 }
 
-function loadLocalSettings(): LocalSettings {
+function loadSecrets(): SecretConfig | null {
+  try {
+    const raw = Keychain.get(SECRET_KEY)
+    return raw ? {
+      userAgent: DEFAULT_UA,
+      surgeApiEnabled: false,
+      surgeApiUrl: "http://127.0.0.1:6171",
+      surgeApiKey: "",
+      ...JSON.parse(raw),
+    } : null
+  } catch (_) {
+    return null
+  }
+}
+
+function loadSettings(): PublicSettings {
   return {
-    boxJsUrl: "https://boxjs.com",
+    title: "电费余额",
+    labels: "",
+    threshold: 20,
     refreshMinutes: 30,
-    ...(Storage.get<LocalSettings>(SETTINGS_KEY) ?? {}),
+    ...(Storage.get<PublicSettings>(SETTINGS_KEY) ?? {}),
   }
 }
 
@@ -285,69 +310,73 @@ function reloadPolicy(minutes: number): any {
 }
 
 async function main() {
-  const localSettings = loadLocalSettings()
-  const policy = reloadPolicy(localSettings.refreshMinutes)
-  let runtime: Awaited<ReturnType<typeof readRuntimeConfigFromBoxJs>>
-  try {
-    runtime = await readRuntimeConfigFromBoxJs({ baseUrl: localSettings.boxJsUrl })
-  } catch (error) {
-    Widget.present(<EmptyWidget message={`BoxJs 读取失败：${String((error as any)?.message ?? error)}`} />, policy)
+  const settings = loadSettings()
+  const secrets = loadSecrets()
+  const policy = reloadPolicy(settings.refreshMinutes)
+
+  if (!secrets) {
+    Widget.present(<EmptyWidget message="请先在 Scripting 中运行本项目，填写账户配置。" />, policy)
     return
   }
 
   const accounts = buildAccounts({
-    numbers: runtime.numbers,
-    tokens: runtime.tokens,
-    openids: runtime.openids,
-    wechaIds: runtime.wechaIds,
-    labels: runtime.labels,
-    title: runtime.title,
+    numbers: secrets.numbers,
+    tokens: secrets.tokens,
+    openids: secrets.openids,
+    wechaIds: secrets.wechaIds,
+    labels: settings.labels,
+    title: settings.title,
   })
   if (!accounts.length || accounts.some(account => !account.number || !account.token || !account.openid)) {
-    Widget.present(<EmptyWidget message="BoxJs 账户配置不完整，请检查户号、Token 和 OpenID/身份标识。" />, policy)
+    Widget.present(<EmptyWidget message="账户配置不完整，请检查户号、Token 和 OpenID。" />, policy)
     return
-  }
-
-  const settings: PublicSettings = {
-    title: runtime.title,
-    labels: runtime.labels,
-    threshold: runtime.threshold,
-    refreshMinutes: localSettings.refreshMinutes,
   }
 
   const cache = Storage.get<CacheData>(CACHE_KEY) ?? { items: {} }
   const nextCache: CacheData = { items: { ...cache.items } }
   const results: DisplayResult[] = []
-  let cookie = runtime.cookie
-  const userAgent = runtime.userAgent || DEFAULT_UA
+  let cookie = secrets.cookie || ""
+  let userAgent = secrets.userAgent || DEFAULT_UA
+
+  if (secrets.surgeApiEnabled && secrets.surgeApiKey) {
+    try {
+      const synced = await readCookieFromSurge({
+        enabled: true,
+        apiUrl: secrets.surgeApiUrl,
+        apiKey: secrets.surgeApiKey,
+      })
+      cookie = synced.cookie || cookie
+      userAgent = synced.userAgent || userAgent
+    } catch (_) {
+      // Surge 关闭、API 不可达或尚未抓取 Cookie 时继续使用钥匙串中的备用值。
+    }
+  }
 
   for (const account of accounts) {
-    let queried: Awaited<ReturnType<typeof queryAccount>> | null = null
-    let queryError: unknown = null
     try {
-      queried = await queryAccount(account, cookie, userAgent)
-    } catch (error) {
-      queryError = error
-    }
-
-    if (queried) {
+      const queried = await queryAccount(account, cookie, userAgent)
       cookie = queried.cookie || cookie
       const updatedAt = Date.now()
       nextCache.items[account.number] = { info: queried.info, updatedAt }
       results.push({ account, info: queried.info, source: "live", updatedAt })
-    } else {
+    } catch (error) {
       const cached = cache.items[account.number]
       results.push({
         account,
         info: cached?.info ?? null,
         source: cached ? "cache" : "none",
         updatedAt: cached?.updatedAt ?? 0,
-        error: String((queryError as any)?.message ?? queryError ?? "未知错误"),
+        error: String((error as any)?.message ?? error),
       })
     }
   }
 
   Storage.set(CACHE_KEY, nextCache)
+  if ((cookie && cookie !== secrets.cookie) || userAgent !== secrets.userAgent) {
+    Keychain.set(SECRET_KEY, JSON.stringify({ ...secrets, cookie, userAgent }), {
+      accessibility: "first_unlock_this_device",
+    })
+  }
 
   Widget.present(<BalanceWidget results={results} settings={settings} />, policy)
 }

@@ -5,144 +5,62 @@ import {
   NavigationStack,
   Script,
   Section,
-  SecureField,
   Text,
   TextField,
-  Toggle,
   Widget,
   useState,
 } from "scripting"
 import { buildAccounts, formatMoney, queryAccount } from "./lsep-api"
-import { readCookieFromSurge } from "./surge"
+import { readRuntimeConfigFromBoxJs } from "./boxjs"
 
-const SECRET_KEY = "lsep_widget_secrets_v1"
-const SETTINGS_KEY = "lsep_widget_settings_v1"
+const SETTINGS_KEY = "lsep_widget_settings_v2"
+const DEFAULT_UA = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 MicroMessenger/8.0.49(0x18003123) NetType/WIFI Language/zh_CN"
 
-type SecretConfig = {
-  numbers: string
-  tokens: string
-  openids: string
-  wechaIds: string
-  cookie: string
-  userAgent: string
-  surgeApiEnabled: boolean
-  surgeApiUrl: string
-  surgeApiKey: string
-}
-
-type PublicSettings = {
-  title: string
-  labels: string
-  threshold: number
+type LocalSettings = {
+  boxJsUrl: string
   refreshMinutes: number
 }
 
-const DEFAULT_UA = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 MicroMessenger/8.0.49(0x18003123) NetType/WIFI Language/zh_CN"
-
-function readSecrets(): SecretConfig {
-  try {
-    const raw = Keychain.get(SECRET_KEY)
-    if (raw) return {
-      userAgent: DEFAULT_UA,
-      surgeApiEnabled: false,
-      surgeApiUrl: "http://127.0.0.1:6171",
-      surgeApiKey: "",
-      ...JSON.parse(raw),
-    }
-  } catch (_) {}
+function readSettings(): LocalSettings {
   return {
-    numbers: "",
-    tokens: "",
-    openids: "",
-    wechaIds: "",
-    cookie: "",
-    userAgent: DEFAULT_UA,
-    surgeApiEnabled: false,
-    surgeApiUrl: "http://127.0.0.1:6171",
-    surgeApiKey: "",
-  }
-}
-
-function readSettings(): PublicSettings {
-  return {
-    title: "电费余额",
-    labels: "",
-    threshold: 20,
+    boxJsUrl: "https://boxjs.com",
     refreshMinutes: 30,
-    ...(Storage.get<PublicSettings>(SETTINGS_KEY) ?? {}),
+    ...(Storage.get<LocalSettings>(SETTINGS_KEY) ?? {}),
   }
 }
 
 function SettingsView() {
-  const savedSecrets = readSecrets()
-  const savedSettings = readSettings()
-
-  const [numbers, setNumbers] = useState(savedSecrets.numbers)
-  const [tokens, setTokens] = useState(savedSecrets.tokens)
-  const [openids, setOpenids] = useState(savedSecrets.openids)
-  const [wechaIds, setWechaIds] = useState(savedSecrets.wechaIds)
-  const [cookie, setCookie] = useState(savedSecrets.cookie)
-  const [userAgent, setUserAgent] = useState(savedSecrets.userAgent)
-  const [surgeApiEnabled, setSurgeApiEnabled] = useState(savedSecrets.surgeApiEnabled)
-  const [surgeApiUrl, setSurgeApiUrl] = useState(savedSecrets.surgeApiUrl)
-  const [surgeApiKey, setSurgeApiKey] = useState(savedSecrets.surgeApiKey)
-  const [title, setTitle] = useState(savedSettings.title)
-  const [labels, setLabels] = useState(savedSettings.labels)
-  const [threshold, setThreshold] = useState(String(savedSettings.threshold))
-  const [refreshMinutes, setRefreshMinutes] = useState(String(savedSettings.refreshMinutes))
+  const saved = readSettings()
+  const [boxJsUrl, setBoxJsUrl] = useState(saved.boxJsUrl)
+  const [refreshMinutes, setRefreshMinutes] = useState(String(saved.refreshMinutes))
   const [message, setMessage] = useState("")
   const [queryOutput, setQueryOutput] = useState("")
   const [querying, setQuerying] = useState(false)
 
   function save() {
-    if (!numbers.trim() || !tokens.trim() || !openids.trim()) {
-      setMessage("请至少填写户号、Token 和 OpenID")
-      return
-    }
-
-    const secretConfig: SecretConfig = {
-      numbers: numbers.trim(),
-      tokens: tokens.trim(),
-      openids: openids.trim(),
-      wechaIds: wechaIds.trim(),
-      cookie: cookie.trim(),
-      userAgent: userAgent.trim() || DEFAULT_UA,
-      surgeApiEnabled,
-      surgeApiUrl: surgeApiUrl.trim() || "http://127.0.0.1:6171",
-      surgeApiKey: surgeApiKey.trim(),
-    }
-    const publicSettings: PublicSettings = {
-      title: title.trim() || "电费余额",
-      labels: labels.trim(),
-      threshold: Math.max(0, Number(threshold) || 0),
+    Storage.set(SETTINGS_KEY, {
+      boxJsUrl: boxJsUrl.trim() || "https://boxjs.com",
       refreshMinutes: Math.max(0, Number(refreshMinutes) || 0),
-    }
-
-    const saved = Keychain.set(SECRET_KEY, JSON.stringify(secretConfig), {
-      accessibility: "first_unlock_this_device",
-    })
-    Storage.set(SETTINGS_KEY, publicSettings)
-
-    if (!saved) {
-      setMessage("钥匙串保存失败，请解锁设备后重试")
-      return
-    }
-
+    } as LocalSettings)
     Widget.reloadAll()
-    setMessage("已保存，并请求刷新小组件")
+    setMessage("已保存 BoxJs 地址和刷新间隔，并请求刷新小组件")
   }
 
-  async function syncFromSurge() {
-    setMessage("正在从 Surge 读取 Cookie…")
+  async function testBoxJs() {
+    setMessage("正在从 BoxJs 临时读取全部查询配置…")
     try {
-      const result = await readCookieFromSurge({
-        enabled: surgeApiEnabled,
-        apiUrl: surgeApiUrl,
-        apiKey: surgeApiKey,
+      const runtime = await readRuntimeConfigFromBoxJs({ baseUrl: boxJsUrl })
+      const accounts = buildAccounts({
+        numbers: runtime.numbers,
+        tokens: runtime.tokens,
+        openids: runtime.openids,
+        wechaIds: runtime.wechaIds,
+        labels: runtime.labels,
+        title: runtime.title,
       })
-      setCookie(result.cookie)
-      if (result.userAgent) setUserAgent(result.userAgent)
-      setMessage("已从 Surge 读取 Cookie，请点击保存并刷新小组件")
+      const valid = accounts.filter(account => account.number && account.token && account.openid).length
+      const cookieFields = runtime.cookie.split(";").map(item => item.split("=")[0].trim()).filter(Boolean)
+      setMessage(`BoxJs 读取成功：${valid} 户；${cookieFields.join("、")}；所有查询配置均未保存到 Scripting`)
     } catch (error) {
       setMessage(String((error as any)?.message ?? error))
     }
@@ -150,166 +68,78 @@ function SettingsView() {
 
   async function queryNow() {
     if (querying) return
-
-    const accounts = buildAccounts({
-      numbers,
-      tokens,
-      openids,
-      wechaIds,
-      labels,
-      title: title.trim() || "电费余额",
-    })
-    if (!accounts.length || accounts.some(account => !account.number || !account.token || !account.openid)) {
-      setQueryOutput("查询失败：请检查户号、Token 和 OpenID，多户字段需按相同顺序对应。")
-      return
-    }
-
     setQuerying(true)
-    setMessage("正在即时查询…")
+    setMessage("正在读取 BoxJs 并即时查询…")
     setQueryOutput("")
 
-    let activeCookie = cookie.trim()
-    let activeUserAgent = userAgent.trim() || DEFAULT_UA
-    const lines: string[] = []
-
-    if (surgeApiEnabled) {
-      try {
-        const synced = await readCookieFromSurge({
-          enabled: true,
-          apiUrl: surgeApiUrl,
-          apiKey: surgeApiKey,
-        })
-        activeCookie = synced.cookie || activeCookie
-        activeUserAgent = synced.userAgent || activeUserAgent
-        setCookie(activeCookie)
-        if (synced.userAgent) setUserAgent(synced.userAgent)
-        lines.push("Surge Cookie：同步成功")
-      } catch (error) {
-        lines.push(`Surge Cookie：同步失败，已使用当前 Cookie\n原因：${String((error as any)?.message ?? error)}`)
+    try {
+      const runtime = await readRuntimeConfigFromBoxJs({ baseUrl: boxJsUrl })
+      const accounts = buildAccounts({
+        numbers: runtime.numbers,
+        tokens: runtime.tokens,
+        openids: runtime.openids,
+        wechaIds: runtime.wechaIds,
+        labels: runtime.labels,
+        title: runtime.title,
+      })
+      if (!accounts.length || accounts.some(account => !account.number || !account.token || !account.openid)) {
+        throw new Error("BoxJs 中的户号、Token、OpenID/身份标识数量或内容不完整")
       }
-    }
 
-    for (const account of accounts) {
-      try {
-        const result = await queryAccount(account, activeCookie, activeUserAgent)
-        activeCookie = result.cookie || activeCookie
-        const balance = result.info.owe > 0
-          ? `欠费 ¥${formatMoney(result.info.owe)}`
-          : `余额 ¥${formatMoney(result.info.prepay)}`
-        const meterTime = result.info.meterTime
-          ? new Date(result.info.meterTime).toLocaleString()
-          : "接口未提供"
-        lines.push(`${account.label}（${account.number}）\n${balance}\n户名：${result.info.name || "未提供"}\n电表更新时间：${meterTime}`)
-      } catch (error) {
-        lines.push(`${account.label}（${account.number}）\n查询失败：${String((error as any)?.message ?? error)}`)
+      let activeCookie = runtime.cookie
+      const activeUserAgent = runtime.userAgent || DEFAULT_UA
+      const lines = ["BoxJs：全部查询配置实时读取成功（未保存到 Scripting）"]
+
+      for (const account of accounts) {
+        try {
+          const result = await queryAccount(account, activeCookie, activeUserAgent)
+          activeCookie = result.cookie || activeCookie
+          const balance = result.info.owe > 0
+            ? `欠费 ¥${formatMoney(result.info.owe)}`
+            : `余额 ¥${formatMoney(result.info.prepay)}`
+          const meterTime = result.info.meterTime
+            ? new Date(result.info.meterTime).toLocaleString()
+            : "接口未提供"
+          lines.push(`${account.label}（${account.number}）\n${balance}\n户名：${result.info.name || "未提供"}\n电表更新时间：${meterTime}`)
+        } catch (error) {
+          lines.push(`${account.label}（${account.number}）\n查询失败：${String((error as any)?.message ?? error)}`)
+        }
       }
-    }
 
-    if (activeCookie) setCookie(activeCookie)
-    setQueryOutput(lines.join("\n\n"))
-    setMessage("即时查询完成；如 Cookie 有更新，请点击保存")
-    setQuerying(false)
+      setQueryOutput(lines.join("\n\n"))
+      setMessage("即时查询完成；账户配置和 Cookie 仅在本轮运行中使用")
+    } catch (error) {
+      setQueryOutput(`读取或查询失败：${String((error as any)?.message ?? error)}`)
+      setMessage("即时查询失败；未使用任何本地账户配置或 Cookie")
+    } finally {
+      setQuerying(false)
+    }
   }
 
   return (
     <NavigationStack>
-      <Form navigationTitle="乐电通小组件">
+      <Form navigationTitle="乐电通电费">
         <Section
-          header={<Text>账户配置</Text>}
-          footer={<Text>多户配置使用英文逗号分隔，并按相同顺序对应；单个 Token 或 OpenID 会自动用于所有户。</Text>}
+          header={<Text>BoxJs 实时读取</Text>}
+          footer={<Text>户号、标签、身份标识、Token、OpenID、Cookie、UA、标题和阈值均从 BoxJs 临时读取，不保存到 Scripting。</Text>}
         >
           <TextField
-            title="户号"
-            value={numbers}
-            onChanged={setNumbers}
-            prompt="例如：12345,67890"
-          />
-          <TextField
-            title="户名"
-            value={labels}
-            onChanged={setLabels}
-            prompt="例如：我家,父母家"
-          />
-          <SecureField
-            title="Token"
-            value={tokens}
-            onChanged={setTokens}
-            prompt="缴费页 URL 中的 token"
-          />
-          <SecureField
-            title="OpenID"
-            value={openids}
-            onChanged={setOpenids}
-            prompt="微信身份标识"
-          />
-          <SecureField
-            title="wechaId（可选）"
-            value={wechaIds}
-            onChanged={setWechaIds}
-            prompt="留空时使用 OpenID"
-          />
-        </Section>
-
-        <Section
-          header={<Text>会话</Text>}
-          footer={<Text>Cookie 格式：PHPSESSID=xxx; tgw_l7_route=xxx。手动 Cookie 会作为 Surge 自动同步失败时的备用值。</Text>}
-        >
-          <TextField
-            title="共享 Cookie"
-            value={cookie}
-            onChanged={setCookie}
-            prompt="PHPSESSID=...; tgw_l7_route=..."
-          />
-          <TextField
-            title="微信 User-Agent"
-            value={userAgent}
-            onChanged={setUserAgent}
-            prompt="留空时使用内置微信 UA"
-          />
-        </Section>
-
-        <Section
-          header={<Text>Surge 自动同步</Text>}
-          footer={<Text>HTTP API 只允许连接本机 127.0.0.1 或 localhost。API 密钥与 Cookie 都只保存在当前 Scripting 项目的系统钥匙串中。</Text>}
-        >
-          <Toggle
-            title="启用自动同步"
-            value={surgeApiEnabled}
-            onChanged={setSurgeApiEnabled}
-          />
-          <TextField
-            title="API 地址"
-            value={surgeApiUrl}
-            onChanged={setSurgeApiUrl}
-            prompt="http://127.0.0.1:6171"
-          />
-          <SecureField
-            title="API 密钥"
-            value={surgeApiKey}
-            onChanged={setSurgeApiKey}
-            prompt="Surge [General] 中 http-api 的密钥"
+            title="BoxJs 地址"
+            value={boxJsUrl}
+            onChanged={setBoxJsUrl}
+            prompt="https://boxjs.com"
           />
           <Button
-            title="测试并读取 Cookie"
+            title="测试读取全部配置"
             systemImage="arrow.triangle.2.circlepath"
-            action={syncFromSurge}
+            action={testBoxJs}
           />
         </Section>
 
         <Section
-          header={<Text>显示与刷新</Text>}
+          header={<Text>小组件刷新</Text>}
           footer={<Text>刷新时间只是向 iOS WidgetKit 发出的请求，系统可能延后执行。填 0 表示不主动指定刷新时间。</Text>}
         >
-          <TextField
-            title="标题"
-            value={title}
-            onChanged={setTitle}
-          />
-          <TextField
-            title="低余额阈值（元）"
-            value={threshold}
-            onChanged={setThreshold}
-          />
           <TextField
             title="刷新间隔（分钟）"
             value={refreshMinutes}
