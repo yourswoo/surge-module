@@ -1,6 +1,6 @@
 /*
  * lsep-balance-boxjs.js — 乐电通电费余额监控 · 多户共享 Cookie / BoxJS 版
- * v6-boxjs-account-config
+ * v7-session-keepalive
  *
  * 所有户号共用同一份 Cookie，持久化键：lsep_balance_cookie
  * Cookie 固定格式：PHPSESSID=xxx; tgw_l7_route=xxx
@@ -11,6 +11,7 @@
  *
  * 模式（由 argument 的 mode 指定）：
  *   panel   面板：实时查询余额并展示（单户详细 / 多户聚合）
+ *   refresh 会话保活：静默查询并续期 Cookie
  *   cron    定时任务：推送余额通知
  *   capture 被动抓取：保存 queryArrears 返回的余额快照
  *   cookie  会话续借：抓取共享 Cookie 与微信 UA
@@ -25,7 +26,7 @@
 
 'use strict';
 
-const VER = 'v6-boxjs-account-config';
+const VER = 'v7-session-keepalive';
 
 const DEFAULTS = {
   mode: '',
@@ -37,6 +38,7 @@ const DEFAULTS = {
   threshold: '20',
   title: '电费余额',
   capnotify: '1',
+  autorefresh: '1',
   debug: '0',
 };
 
@@ -156,7 +158,7 @@ function redact(v) {
   return v.length <= 8 ? v : v.slice(0, 5) + '…' + v.length;
 }
 function flushDbg() {
-  if (MODE !== 'panel' && MODE !== 'cron') return;
+  if (MODE !== 'panel' && MODE !== 'cron' && MODE !== 'refresh') return;
   const dump = VER + ' ' + fmtTime(Date.now()) + '\n' + DBG.join('\n');
   try { $persistentStore.write(dump, DBG_KEY); } catch (e) {}
   if (CONF.debug === '1') console.log('[lsep-balance ' + VER + ']\n' + dump);
@@ -671,6 +673,20 @@ async function runCron() {
   $done();
 }
 
+// 仅用于维持服务端会话：成功、失败都不弹通知。
+async function runRefresh() {
+  if (String(CONF.autorefresh) === '0') return $done();
+  const miss = missingConf();
+  if (miss) {
+    dlog('静默续期跳过：' + miss);
+    flushDbg();
+    return $done();
+  }
+  await Promise.all(buildAccounts().map(queryOne));
+  flushDbg();
+  $done();
+}
+
 function runCapture() {
   try {
     const body = (typeof $response !== 'undefined' && typeof $response.body === 'string') ? $response.body : '';
@@ -682,18 +698,8 @@ function runCapture() {
         const numbers = accts.map(a => a.number);
         if (!code || numbers.indexOf(code) >= 0 || numbers.length === 0) {
           const number = code || (accts[0] && accts[0].number) || '';
-          const hit = accts.filter(a => a.number === number)[0];
           const info = normalize(j.data, number);
-          const prev = saveSnapshot(number, info, 'wechat');
-          const changed = !prev || Math.abs(prev.v - info.v) > 0.005;
-          if (changed && CONF.capnotify !== '0') {
-            const nm = (hit && hit.label) || (CONF.title || '电费余额');
-            $notification.post(
-              '⚡️ ' + nm + ' 已更新（微信抓取）',
-              info.owe > 0 ? '欠费 ' + fmtMoney(info.owe) + ' 元' : '余额 ' + fmtMoney(info.prepay) + ' 元',
-              prev ? '上次：' + fmtMoney(prev.v) + ' 元（' + fmtTime(prev.t) + '）' : '已存为缓存，供面板与每日提醒使用'
-            );
-          }
+          saveSnapshot(number, info, 'wechat');
         }
       }
     }
@@ -710,7 +716,7 @@ function runCookieHarvest() {
     const requestUrl = (typeof $request !== 'undefined' && $request.url) || '';
     let cookie = '';
     let ua = '';
-    let configChanged = syncAccountFromUrl(requestUrl);
+    syncAccountFromUrl(requestUrl);
     let cookieChanged = false;
     for (const k in h) {
       const lk = String(k).toLowerCase();
@@ -726,14 +732,10 @@ function runCookieHarvest() {
       const oldUa = $persistentStore.read(UA_KEY) || '';
       if (oldUa !== ua) {
         $persistentStore.write(ua, UA_KEY);
-        configChanged = true;
       }
     }
-    if (CONF.capnotify !== '0' && (cookieChanged || configChanged)) {
-      const items = [];
-      if (cookieChanged) items.push('Cookie');
-      if (configChanged) items.push('账户配置/微信 UA');
-      $notification.post('乐电通配置已更新', '', items.join('、') + ' 已写入 BoxJS');
+    if (CONF.capnotify !== '0' && cookieChanged) {
+      $notification.post('已抓取到乐电通 Cookie', '', '');
     }
   } catch (e) {
     // 抓取失败保持静默，不影响微信页面。
@@ -757,6 +759,7 @@ function runDump() {
     if (MODE === 'capture') return runCapture();
     if (MODE === 'cookie') return runCookieHarvest();
     if (MODE === 'dump') return runDump();
+    if (MODE === 'refresh') return await runRefresh();
     if (MODE === 'cron') return await runCron();
     return await runPanel();
   } catch (e) {

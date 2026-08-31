@@ -92,10 +92,10 @@
         },
         {
           "id": "lsep_balance_capnotify",
-          "name": "抓取更新通知",
+          "name": "Cookie 抓取通知",
           "val": "1",
           "type": "text",
-          "desc": "1 开启，0 关闭"
+          "desc": "微信页面抓取到新 Cookie 时提示；1 开启，0 关闭。自动续期始终静默"
         },
         {
           "id": "lsep_balance_debug",
