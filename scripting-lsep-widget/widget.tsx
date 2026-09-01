@@ -267,7 +267,7 @@ function Header({ results, compact = false }: { results: DisplayResult[]; compac
     <VStack alignment="leading" spacing={compact ? 4 : 6}>
       <HStack alignment="center" spacing={8}>
         <Image
-          imageUrl="https://yong.ing/ldt.PNG"
+          imageUrl="https://raw.githubusercontent.com/yourswoo/logo/refs/heads/main/lse.PNG"
           resizable
           scaleToFit
           frame={{ width: iconSize, height: iconSize }}

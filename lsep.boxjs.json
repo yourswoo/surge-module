@@ -2,7 +2,7 @@
   "id": "lsep.balance",
   "name": "乐电通",
   "author": "Yong",
-  "icon": "https://yong.ing/ldt.PNG",
+  "icon": "https://raw.githubusercontent.com/yourswoo/logo/refs/heads/main/lse.PNG",
   "apps": [
     {
       "id": "lsep_balance",
