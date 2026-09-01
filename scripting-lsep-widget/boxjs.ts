@@ -13,6 +13,10 @@ export type BoxJsRuntimeConfig = {
   cookie: string
   userAgent: string
   title: string
+  lowBalanceThreshold: string
+  criticalBalanceThreshold: string
+  monthlyOpeningBalances: string
+  monthlyOpeningMonth: string
 }
 
 const KEYS = {
@@ -24,6 +28,10 @@ const KEYS = {
   cookie: "lsep_balance_cookie",
   userAgent: "lsep_balance_ua",
   title: "lsep_balance_title",
+  lowBalanceThreshold: "lsep_balance_threshold",
+  criticalBalanceThreshold: "lsep_balance_critical_threshold",
+  monthlyOpeningBalances: "lsep_balance_monthly_opening",
+  monthlyOpeningMonth: "lsep_balance_monthly_opening_month",
 } as const
 
 function normalizeBaseUrl(value: string): string {
@@ -84,5 +92,9 @@ export async function readRuntimeConfigFromBoxJs(config: BoxJsConfig): Promise<B
     cookie,
     userAgent: raw.userAgent,
     title: raw.title || "电费余额",
+    lowBalanceThreshold: raw.lowBalanceThreshold || "20",
+    criticalBalanceThreshold: raw.criticalBalanceThreshold || "10",
+    monthlyOpeningBalances: raw.monthlyOpeningBalances,
+    monthlyOpeningMonth: raw.monthlyOpeningMonth,
   }
 }

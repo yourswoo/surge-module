@@ -8,7 +8,7 @@ import {
   ZStack,
   modifiers,
 } from "scripting"
-import { Account, BalanceInfo, buildAccounts, formatMoney, queryAccount } from "./lsep-api"
+import { Account, BalanceInfo, BillInfo, buildAccounts, formatMoney, queryAccount, queryLatestBill } from "./lsep-api"
 import { readRuntimeConfigFromBoxJs } from "./boxjs"
 
 const SETTINGS_KEY = "lsep_widget_settings_v2"
@@ -19,10 +19,6 @@ const DEFAULT_UA = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) Apple
 type LocalSettings = {
   boxJsUrl: string
   refreshMinutes: number
-  lowBalanceThreshold: number
-  criticalBalanceThreshold: number
-  monthlyOpeningBalances: Array<number | null>
-  monthlyOpeningMonth: string
 }
 
 type PublicSettings = {
@@ -38,12 +34,14 @@ type DisplayResult = {
   info: BalanceInfo | null
   source: "live" | "cache" | "none"
   updatedAt: number
+  changedAt: number
   monthlyUsed: number
+  previousMonthBill: BillInfo | null
   error?: string
 }
 
 type CacheData = {
-  items: Record<string, { info: BalanceInfo; updatedAt: number }>
+  items: Record<string, { info: BalanceInfo; updatedAt: number; changedAt?: number; previousMonthBill?: BillInfo | null }>
 }
 
 type MonthlyUsageRecord = {
@@ -63,10 +61,6 @@ function loadLocalSettings(): LocalSettings {
   return {
     boxJsUrl: "https://boxjs.com",
     refreshMinutes: 30,
-    lowBalanceThreshold: 20,
-    criticalBalanceThreshold: 10,
-    monthlyOpeningBalances: [null, null],
-    monthlyOpeningMonth: "",
     ...(Storage.get<LocalSettings>(SETTINGS_KEY) ?? {}),
   }
 }
@@ -74,7 +68,6 @@ function loadLocalSettings(): LocalSettings {
 type Theme = {
   pageBg: any
   cardRaised: any
-  usagePill: any
   accentSoft: any
   texture: any
   pageText: any
@@ -84,6 +77,8 @@ type Theme = {
 type RowVisual = {
   color: string
   tint: any
+  pillTint: any
+  pillText: any
   amount: string
   status: string
 }
@@ -91,7 +86,6 @@ type RowVisual = {
 const THEME: Theme = {
   pageBg: { light: "#EAF4F2", dark: "#061310" },
   cardRaised: { light: "#FFFFFF", dark: "#112A25" },
-  usagePill: { light: "#FFFFFF", dark: "#1B493D" },
   accentSoft: { light: "#D8F5EC", dark: "#123A31" },
   texture: { light: "#288F78", dark: "#3BC49F" },
   pageText: { light: "#102A25", dark: "#E8FFF8" },
@@ -108,8 +102,32 @@ function currentMonthKey(date = new Date()): string {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`
 }
 
+function previousBillMonthKey(date = new Date()): string {
+  const previous = new Date(date.getFullYear(), date.getMonth() - 1, 1)
+  return `${previous.getFullYear()}${String(previous.getMonth() + 1).padStart(2, "0")}`
+}
+
+function usablePreviousMonthBill(bill: BillInfo | null | undefined): BillInfo | null {
+  return bill?.month === previousBillMonthKey() ? bill : null
+}
+
 function moneyValue(value: number): number {
   return Math.round(value * 100) / 100
+}
+
+function thresholdValue(value: string, fallback: number): number {
+  const parsed = Number(value)
+  return Number.isFinite(parsed) ? Math.max(0, parsed) : fallback
+}
+
+function optionalMoneyList(value: string): Array<number | null> {
+  if (!value.trim()) return []
+  return value.split(/[,|]/).map(item => {
+    const text = item.trim()
+    if (!text) return null
+    const parsed = Number(text)
+    return Number.isFinite(parsed) ? moneyValue(parsed) : null
+  })
 }
 
 function monthlyUsedFor(accountNumber: string, usage: MonthlyUsageData): number {
@@ -151,67 +169,92 @@ function recordMonthlyUsage(accountNumber: string, balance: number, usage: Month
   return used
 }
 
-function latestUpdate(results: DisplayResult[]): number {
-  const times = results.map(result => result.updatedAt).filter(time => time > 0)
-  return times.length ? Math.max(...times) : 0
-}
+const FRESH_RESULT_WINDOW = 12 * 60 * 60 * 1000
 
-function updateLabel(time: number): string {
-  if (!time) return "等待首次查询"
-  const diffMinutes = Math.max(0, Math.floor((Date.now() - time) / 60000))
-  if (diffMinutes < 1) return "刚刚更新"
-  if (diffMinutes < 60) return `${diffMinutes} 分钟前更新`
+function formatChangedAt(time: number, compact: boolean): string {
+  if (!time) return compact ? "等待更新" : "等待首次数据更新"
   const date = new Date(time)
+  const month = String(date.getMonth() + 1).padStart(2, "0")
+  const day = String(date.getDate()).padStart(2, "0")
   const hour = String(date.getHours()).padStart(2, "0")
   const minute = String(date.getMinutes()).padStart(2, "0")
-  return `更新于 ${hour}:${minute}`
+  return compact ? `${month}-${day} ${hour}:${minute}` : `上次更新 ${month}-${day} ${hour}:${minute}`
 }
 
-function queryStatusColor(results: DisplayResult[]): string {
-  if (!results.length || results.some(result => result.source !== "live")) return "#FF9F0A"
-  return "#30D158"
+function resultFreshness(results: DisplayResult[]): { fresh: boolean; changedAt: number } {
+  const times = results.map(result => result.changedAt).filter(time => time > 0)
+  const changedAt = times.length ? Math.min(...times) : 0
+  const allLive = results.length > 0 && results.every(result => result.source === "live")
+  return {
+    fresh: allLive && !!changedAt && Date.now() - changedAt < FRESH_RESULT_WINDOW,
+    changedAt,
+  }
 }
 
-function TechTexture({ compact = false }: { compact?: boolean }) {
-  const pattern = compact
-    ? "+    +    +    +    +    +"
-    : "+    +    +    +    +    +    +    +    +    +    +    +"
+function sameResult(previous: BalanceInfo | undefined, current: BalanceInfo): boolean {
+  if (!previous) return false
+  return Math.abs(previous.value - current.value) < 0.005
+    && Math.abs(previous.owe - current.owe) < 0.005
+    && Math.abs(previous.prepay - current.prepay) < 0.005
+    && previous.meterTime === current.meterTime
+}
+
+function TechTexture({ compact = false, medium = false }: { compact?: boolean; medium?: boolean }) {
+  const counts = compact
+    ? [3, 4, 3, 4, 5, 6, 7, 8, 9, 10]
+    : medium
+      ? [8, 9, 8, 7, 6, 5, 4, 3, 2]
+      : [10, 11, 10, 9, 8, 7, 6, 5, 4]
+  const offsets = compact
+    ? [0, 4, 1, 5, 2, 6, 3, 7, 4, 8]
+    : [0, 5, 1, 6, 2, 7, 3, 8, 4]
+  const gap = compact ? "   " : "    "
   return (
     <VStack
-      alignment="leading"
-      spacing={compact ? 9 : 12}
-      frame={{ maxWidth: "infinity", maxHeight: "infinity", alignment: "topLeading" }}
-      modifiers={modifiers().padding({ leading: 5, trailing: 5, top: 2, bottom: 2 }).opacity(0.16)}
+      alignment="trailing"
+      spacing={compact ? 6 : 8}
+      frame={{ maxWidth: "infinity", maxHeight: "infinity", alignment: "topTrailing" }}
+      modifiers={modifiers().padding({ leading: 5, trailing: 3, top: 2, bottom: 2 }).opacity(0.16)}
     >
-      <Text modifiers={modifiers().font(8).foregroundStyle(THEME.texture) as any}>{pattern}</Text>
-      <Text modifiers={modifiers().font(8).foregroundStyle(THEME.texture) as any}>  {pattern}</Text>
-      <Text modifiers={modifiers().font(8).foregroundStyle(THEME.texture) as any}>{pattern}</Text>
-      <Text modifiers={modifiers().font(8).foregroundStyle(THEME.texture) as any}>  {pattern}</Text>
-      <Text modifiers={modifiers().font(8).foregroundStyle(THEME.texture) as any}>{pattern}</Text>
-      {!compact ? <Text modifiers={modifiers().font(8).foregroundStyle(THEME.texture) as any}>  {pattern}</Text> : null}
-      {!compact ? <Text modifiers={modifiers().font(8).foregroundStyle(THEME.texture) as any}>{pattern}</Text> : null}
+      {counts.map((count, index) => (
+        <Text
+          key={`texture-${index}-${count}`}
+          modifiers={modifiers()
+            .padding({ trailing: offsets[index] })
+            .font(8)
+            .foregroundStyle(THEME.texture) as any}
+        >
+          {Array(count).fill("+").join(gap)}
+        </Text>
+      ))}
     </VStack>
   )
 }
 
 function rowVisual(result: DisplayResult, lowThreshold: number, criticalThreshold: number): RowVisual {
   if (!result.info) {
-    return { color: "#8E8E93", tint: { light: "#F0F3F2", dark: "#172321" }, amount: "¥ --", status: "等待查询" }
+    return { color: "#8E8E93", tint: { light: "#F0F3F2", dark: "#172321" }, pillTint: { light: "#E5EBE9", dark: "#263430" }, pillText: { light: "#596963", dark: "#CFDDD8" }, amount: "¥ --", status: "等待查询" }
   }
   if (result.info.owe > 0) {
-    return { color: "#FF453A", tint: { light: "#FFF0F0", dark: "#321819" }, amount: `¥${formatMoney(result.info.owe)}`, status: "欠费，请及时充值" }
+    return { color: "#FF453A", tint: { light: "#FFF0F0", dark: "#321819" }, pillTint: { light: "#FFDAD7", dark: "#4A1F20" }, pillText: { light: "#9D2A25", dark: "#FFD4D1" }, amount: `¥${formatMoney(result.info.owe)}`, status: "欠费，请及时充值" }
   }
   if (criticalThreshold > 0 && result.info.prepay <= criticalThreshold) {
-    return { color: "#FF453A", tint: { light: "#FFF0F0", dark: "#321819" }, amount: `¥${formatMoney(result.info.prepay)}`, status: "余额不足，请及时充值" }
+    return { color: "#FF453A", tint: { light: "#FFF0F0", dark: "#321819" }, pillTint: { light: "#FFDAD7", dark: "#4A1F20" }, pillText: { light: "#9D2A25", dark: "#FFD4D1" }, amount: `¥${formatMoney(result.info.prepay)}`, status: "余额不足，请及时充值" }
   }
   if (lowThreshold > 0 && result.info.prepay < lowThreshold) {
-    return { color: "#FF9F0A", tint: { light: "#FFF7E8", dark: "#302511" }, amount: `¥${formatMoney(result.info.prepay)}`, status: "余额偏低" }
+    return { color: "#FF9F0A", tint: { light: "#FFF7E8", dark: "#302511" }, pillTint: { light: "#FFEBC2", dark: "#49330D" }, pillText: { light: "#8B5600", dark: "#FFE0A3" }, amount: `¥${formatMoney(result.info.prepay)}`, status: "余额偏低" }
   }
   return {
     color: result.source === "live" ? "#22C997" : "#8E8E93",
     tint: result.source === "live"
       ? { light: "#ECFBF6", dark: "#0D2B23" }
       : { light: "#F0F3F2", dark: "#172321" },
+    pillTint: result.source === "live"
+      ? { light: "#D7F5EA", dark: "#17483A" }
+      : { light: "#E5EBE9", dark: "#263430" },
+    pillText: result.source === "live"
+      ? { light: "#176B56", dark: "#BDF5E5" }
+      : { light: "#596963", dark: "#CFDDD8" },
     amount: `¥${formatMoney(result.info.prepay)}`,
     status: result.source === "live" ? "余额正常" : "缓存数据",
   }
@@ -219,37 +262,34 @@ function rowVisual(result: DisplayResult, lowThreshold: number, criticalThreshol
 
 function Header({ results, compact = false }: { results: DisplayResult[]; compact?: boolean }) {
   const iconSize = compact ? 23 : 28
+  const freshness = resultFreshness(results)
   return (
     <VStack alignment="leading" spacing={compact ? 4 : 6}>
       <HStack alignment="center" spacing={8}>
-        <HStack modifiers={modifiers()
-          .padding(compact ? 4 : 5)
-          .background({ style: THEME.accentSoft, shape: { type: "rect", cornerRadius: compact ? 10 : 12 } } as any)}>
-          <Image
-            imageUrl="https://yong.ing/ldt.PNG"
-            resizable
-            scaleToFit
-            frame={{ width: iconSize, height: iconSize }}
-          />
-        </HStack>
+        <Image
+          imageUrl="https://yong.ing/ldt.PNG"
+          resizable
+          scaleToFit
+          frame={{ width: iconSize, height: iconSize }}
+        />
         <VStack alignment="leading" spacing={1}>
           <Text modifiers={modifiers()
             .font(compact ? 11 : 13)
             .foregroundStyle(THEME.pageText)
             .fontWeight("bold") as any}>
-            乐电通
+            乐 山 电 力
           </Text>
           {!compact ? (
             <Text modifiers={modifiers().font(7).foregroundStyle(THEME.mutedText) as any}>
-              LESHAN POWER
+              LESHAN ELECTRIC POEWER
             </Text>
           ) : null}
         </VStack>
         <Spacer />
         <HStack alignment="center" spacing={4}>
-          <Text modifiers={modifiers().font(compact ? 9 : 10).foregroundStyle(queryStatusColor(results) as any) as any}>●</Text>
+          <Text modifiers={modifiers().font(compact ? 9 : 10).foregroundStyle((freshness.fresh ? "#30D158" : "#FF9F0A") as any) as any}>●</Text>
           <Text modifiers={modifiers().font(compact ? 7 : 8).foregroundStyle(THEME.mutedText) as any}>
-            {compact ? "在线" : updateLabel(latestUpdate(results))}
+            {freshness.fresh ? " " : formatChangedAt(freshness.changedAt, compact)}
           </Text>
         </HStack>
       </HStack>
@@ -343,7 +383,7 @@ function MediumAccountCard({ result, lowThreshold, criticalThreshold }: { result
           </Text>
         </VStack>
         <Spacer />
-        <Text modifiers={modifiers().font(22).foregroundStyle("#30D158").opacity(0.14) as any}>⚡︎</Text>
+        <Text modifiers={modifiers().font(22).foregroundStyle(visual.color as any).opacity(0.38) as any}>⚡︎</Text>
       </HStack>
       <Text modifiers={modifiers().font(17).foregroundStyle(visual.color as any).fontWeight("bold") as any}>
         {visual.amount}
@@ -356,12 +396,25 @@ function MediumAccountCard({ result, lowThreshold, criticalThreshold }: { result
         spacing={2}
         modifiers={modifiers()
           .padding({ leading: 6, trailing: 6, top: 4, bottom: 4 })
-          .background({ style: THEME.usagePill, shape: { type: "rect", cornerRadius: 8 } } as any)}
+          .background({ style: visual.pillTint, shape: { type: "rect", cornerRadius: 8 } } as any)}
       >
-        <Text lineLimit={1} modifiers={modifiers().font(7).foregroundStyle(THEME.mutedText) as any}>本月已用电：</Text>
+        <Text lineLimit={1} modifiers={modifiers().font(7).foregroundStyle(visual.pillText) as any}>本月已用电：</Text>
         <Spacer />
-        <Text lineLimit={1} modifiers={modifiers().font(9).foregroundStyle(THEME.pageText).fontWeight("semibold") as any}>
+        <Text lineLimit={1} modifiers={modifiers().font(9).foregroundStyle(visual.pillText).fontWeight("semibold") as any}>
           ¥{formatMoney(result.monthlyUsed)}
+        </Text>
+      </HStack>
+      <HStack
+        alignment="center"
+        spacing={2}
+        modifiers={modifiers()
+          .padding({ leading: 6, trailing: 6, top: 4, bottom: 4 })
+          .background({ style: visual.pillTint, shape: { type: "rect", cornerRadius: 8 } } as any)}
+      >
+        <Text lineLimit={1} modifiers={modifiers().font(7).foregroundStyle(visual.pillText) as any}>上月电费：</Text>
+        <Spacer />
+        <Text lineLimit={1} modifiers={modifiers().font(9).foregroundStyle(visual.pillText).fontWeight("semibold") as any}>
+          {result.previousMonthBill ? `¥${formatMoney(result.previousMonthBill.money)}` : "账单未出"}
         </Text>
       </HStack>
     </VStack>
@@ -424,7 +477,7 @@ function BalanceWidget({ results, settings }: { results: DisplayResult[]; settin
         widgetBackground={THEME.pageBg}
         frame={{ maxWidth: "infinity", maxHeight: "infinity" }}
       >
-        <TechTexture />
+        <TechTexture medium />
         <VStack
           alignment="leading"
           spacing={7}
@@ -528,8 +581,14 @@ async function main() {
   const settings: PublicSettings = {
     title: runtime.title,
     labels: runtime.labels,
-    lowBalanceThreshold: Math.max(localSettings.lowBalanceThreshold, localSettings.criticalBalanceThreshold),
-    criticalBalanceThreshold: Math.min(localSettings.lowBalanceThreshold, localSettings.criticalBalanceThreshold),
+    lowBalanceThreshold: Math.max(
+      thresholdValue(runtime.lowBalanceThreshold, 20),
+      thresholdValue(runtime.criticalBalanceThreshold, 10),
+    ),
+    criticalBalanceThreshold: Math.min(
+      thresholdValue(runtime.lowBalanceThreshold, 20),
+      thresholdValue(runtime.criticalBalanceThreshold, 10),
+    ),
     refreshMinutes: localSettings.refreshMinutes,
   }
 
@@ -540,6 +599,7 @@ async function main() {
   const results: DisplayResult[] = []
   let cookie = runtime.cookie
   const userAgent = runtime.userAgent || DEFAULT_UA
+  const monthlyOpeningBalances = optionalMoneyList(runtime.monthlyOpeningBalances)
 
   for (let accountIndex = 0; accountIndex < accounts.length; accountIndex += 1) {
     const account = accounts[accountIndex]
@@ -554,17 +614,29 @@ async function main() {
     if (queried) {
       cookie = queried.cookie || cookie
       const updatedAt = Date.now()
+      const previousCache = cache.items[account.number]
+      const changedAt = sameResult(previousCache?.info, queried.info)
+        ? previousCache?.changedAt ?? previousCache?.updatedAt ?? updatedAt
+        : updatedAt
+      let previousMonthBill: BillInfo | null = usablePreviousMonthBill(previousCache?.previousMonthBill)
+      try {
+        const billResult = await queryLatestBill(account, cookie, userAgent)
+        cookie = billResult.cookie || cookie
+        previousMonthBill = billResult.bill
+      } catch (_) {
+        // 账单接口临时失败时，保留同一账期的缓存；跨月旧账单已在初始化时过滤。
+      }
       const monthlyUsed = recordMonthlyUsage(
         account.number,
         queried.info.value,
         nextUsage,
         updatedAt,
-        localSettings.monthlyOpeningMonth === currentMonthKey()
-          ? localSettings.monthlyOpeningBalances?.[accountIndex] ?? null
+        runtime.monthlyOpeningMonth.trim() === currentMonthKey()
+          ? monthlyOpeningBalances[accountIndex] ?? null
           : null,
       )
-      nextCache.items[account.number] = { info: queried.info, updatedAt }
-      results.push({ account, info: queried.info, source: "live", updatedAt, monthlyUsed })
+      nextCache.items[account.number] = { info: queried.info, updatedAt, changedAt, previousMonthBill }
+      results.push({ account, info: queried.info, source: "live", updatedAt, changedAt, monthlyUsed, previousMonthBill })
     } else {
       const cached = cache.items[account.number]
       results.push({
@@ -572,7 +644,9 @@ async function main() {
         info: cached?.info ?? null,
         source: cached ? "cache" : "none",
         updatedAt: cached?.updatedAt ?? 0,
+        changedAt: cached?.changedAt ?? cached?.updatedAt ?? 0,
         monthlyUsed: monthlyUsedFor(account.number, nextUsage),
+        previousMonthBill: usablePreviousMonthBill(cached?.previousMonthBill),
         error: String((queryError as any)?.message ?? queryError ?? "未知错误"),
       })
     }

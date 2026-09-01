@@ -19,6 +19,13 @@ export type BalanceInfo = {
   meterTime: number
 }
 
+export type BillInfo = {
+  month: string
+  money: number
+  amount: number
+  isPaid: boolean
+}
+
 export type AccountConfig = {
   numbers: string
   tokens: string
@@ -64,8 +71,8 @@ function pageUrl(account: Account): string {
   return `${HOST}/index.php?g=Wap&m=Payment&a=all&token=${encodeURIComponent(account.token)}&wecha_id=${encodeURIComponent(account.wechaId)}&number=${encodeURIComponent(account.number)}`
 }
 
-function gateUrl(account: Account): string {
-  return `${HOST}/index.php?g=Wap&m=Bound&a=getApi&token=${encodeURIComponent(account.token)}&method=queryArrears`
+function gateUrl(account: Account, method: string): string {
+  return `${HOST}/index.php?g=Wap&m=Bound&a=getApi&token=${encodeURIComponent(account.token)}&method=${encodeURIComponent(method)}`
 }
 
 function parseCookie(value: string): Record<string, string> {
@@ -114,7 +121,7 @@ function parseJson(body: string, label: string): any {
   }
 }
 
-async function fetchGate(account: Account, cookie: string, userAgent: string): Promise<{ gate: any; cookie: string }> {
+async function fetchGate(account: Account, cookie: string, userAgent: string, method: string): Promise<{ gate: any; cookie: string }> {
   const headers: Record<string, string> = {
     "User-Agent": userAgent,
     Accept: "application/json, text/javascript, */*; q=0.01",
@@ -124,11 +131,11 @@ async function fetchGate(account: Account, cookie: string, userAgent: string): P
   }
   if (cookie) headers.Cookie = cookie
 
-  const { response, body } = await request(gateUrl(account), { headers, debugLabel: "乐电通 getApi" })
+  const { response, body } = await request(gateUrl(account, method), { headers, debugLabel: `乐电通 ${method} getApi` })
   const nextCookie = mergeResponseCookies(cookie, response)
   const json = parseJson(body, "getApi")
   if (String(json.code) !== "9999" || !json.data?.url || !json.data?.extend) {
-    throw new Error(`getApi：${String(json.msg ?? "会话无效").slice(0, 60)}`)
+    throw new Error(`${method} getApi：${String(json.msg ?? "会话无效").slice(0, 60)}`)
   }
   return { gate: json.data, cookie: nextCookie }
 }
@@ -176,12 +183,12 @@ export async function queryAccount(account: Account, initialCookie: string, user
   let gate: any
 
   try {
-    const result = await fetchGate(account, cookie, userAgent)
+    const result = await fetchGate(account, cookie, userAgent, "queryArrears")
     gate = result.gate
     cookie = result.cookie
   } catch (_) {
     cookie = await visitPaymentPage(account, cookie, userAgent)
-    const result = await fetchGate(account, cookie, userAgent)
+    const result = await fetchGate(account, cookie, userAgent, "queryArrears")
     gate = result.gate
     cookie = result.cookie
   }
@@ -203,6 +210,57 @@ export async function queryAccount(account: Account, initialCookie: string, user
     throw new Error(`查询失败：${String(json.msg ?? "未知错误").slice(0, 60)}`)
   }
   return { info: normalizeBalance(json.data, account.number), cookie }
+}
+
+function previousMonthKey(date = new Date()): string {
+  const previous = new Date(date.getFullYear(), date.getMonth() - 1, 1)
+  return `${previous.getFullYear()}${String(previous.getMonth() + 1).padStart(2, "0")}`
+}
+
+function normalizeBill(data: any): BillInfo {
+  return {
+    month: String(data.month ?? data.Month ?? ""),
+    money: Number.parseFloat(data.allMoney ?? data.Money) || 0,
+    amount: Number.parseFloat(data.allAmount ?? data.Amount) || 0,
+    isPaid: Boolean(data.allStatus ?? data.IsPay),
+  }
+}
+
+export async function queryLatestBill(account: Account, initialCookie: string, userAgent: string): Promise<{ bill: BillInfo | null; cookie: string }> {
+  let cookie = normalizeCookie(initialCookie)
+  let gate: any
+
+  try {
+    const result = await fetchGate(account, cookie, userAgent, "waterChargesQuery")
+    gate = result.gate
+    cookie = result.cookie
+  } catch (_) {
+    cookie = await visitPaymentPage(account, cookie, userAgent)
+    const result = await fetchGate(account, cookie, userAgent, "waterChargesQuery")
+    gate = result.gate
+    cookie = result.cookie
+  }
+
+  const { body } = await request(gate.url, {
+    method: "POST",
+    headers: {
+      "User-Agent": userAgent,
+      "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+      Accept: "application/json, text/javascript, */*; q=0.01",
+      Origin: HOST,
+      Referer: `${HOST}/`,
+    },
+    body: formBody(gate, account),
+    debugLabel: "乐电通 waterChargesQuery",
+  })
+  const json = parseJson(body, "waterChargesQuery")
+  if (String(json.code) !== "9999") {
+    throw new Error(`账单查询失败：${String(json.msg ?? "未知错误").slice(0, 60)}`)
+  }
+  const target = previousMonthKey()
+  const rows = Array.isArray(json.data) ? json.data : []
+  const match = rows.find(item => String(item?.month ?? item?.Month ?? "") === target)
+  return { bill: match ? normalizeBill(match) : null, cookie }
 }
 
 export function formatMoney(value: number): string {
