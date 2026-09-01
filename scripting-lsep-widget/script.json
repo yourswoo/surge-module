@@ -2,15 +2,15 @@
   "name": "乐电通电费",
   "icon": "bolt.fill",
   "color": "#30D158",
-  "version": "1.1.1",
-  "description": "LSEP electricity widget with runtime-only BoxJs configuration reading.",
+  "version": "1.2.0",
+  "description": "LSEP electricity widget with adaptive themes, dual-account monthly usage, and runtime-only BoxJs configuration reading.",
   "localizedNames": {
     "zh": "乐电通电费",
     "en": "LSEP Electricity"
   },
   "localizedDescriptions": {
-    "zh": "每次查询时从 BoxJs 临时读取全部账户配置和 Cookie，不在 Scripting 保存。",
-    "en": "Read account configuration and Cookie from BoxJs at runtime without persisting them in Scripting."
+    "zh": "自适应明暗主题，支持双户余额与月度用电统计；查询配置和 Cookie 均从 BoxJs 实时读取。",
+    "en": "Adaptive themes with dual-account balances and monthly usage; configuration and Cookie are read from BoxJs at runtime."
   },
   "remoteResource": {
     "url": "https://raw.githubusercontent.com/yourswoo/surge-module/refs/heads/modules/lsep-electricity-widget.scripting",

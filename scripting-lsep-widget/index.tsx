@@ -21,6 +21,12 @@ type LocalSettings = {
   refreshMinutes: number
   lowBalanceThreshold: number
   criticalBalanceThreshold: number
+  monthlyOpeningBalances: Array<number | null>
+  monthlyOpeningMonth: string
+}
+
+function currentMonthKey(date = new Date()): string {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`
 }
 
 function readSettings(): LocalSettings {
@@ -29,16 +35,28 @@ function readSettings(): LocalSettings {
     refreshMinutes: 30,
     lowBalanceThreshold: 20,
     criticalBalanceThreshold: 10,
+    monthlyOpeningBalances: [null, null],
+    monthlyOpeningMonth: "",
     ...(Storage.get<LocalSettings>(SETTINGS_KEY) ?? {}),
   }
 }
 
+function optionalMoney(value: string): number | null {
+  const text = value.trim()
+  if (!text) return null
+  const amount = Number(text)
+  return Number.isFinite(amount) ? Math.round(amount * 100) / 100 : null
+}
+
 function SettingsView() {
   const saved = readSettings()
+  const savedOpeningBalances = saved.monthlyOpeningMonth === currentMonthKey() ? saved.monthlyOpeningBalances : [null, null]
   const [boxJsUrl, setBoxJsUrl] = useState(saved.boxJsUrl)
   const [refreshMinutes, setRefreshMinutes] = useState(String(saved.refreshMinutes))
   const [lowBalanceThreshold, setLowBalanceThreshold] = useState(String(saved.lowBalanceThreshold))
   const [criticalBalanceThreshold, setCriticalBalanceThreshold] = useState(String(saved.criticalBalanceThreshold))
+  const [firstOpeningBalance, setFirstOpeningBalance] = useState(savedOpeningBalances?.[0] == null ? "" : String(savedOpeningBalances[0]))
+  const [secondOpeningBalance, setSecondOpeningBalance] = useState(savedOpeningBalances?.[1] == null ? "" : String(savedOpeningBalances[1]))
   const [message, setMessage] = useState("")
   const [queryOutput, setQueryOutput] = useState("")
   const [querying, setQuerying] = useState(false)
@@ -55,9 +73,11 @@ function SettingsView() {
       refreshMinutes: Math.max(0, Number(refreshMinutes) || 0),
       lowBalanceThreshold: low,
       criticalBalanceThreshold: critical,
+      monthlyOpeningBalances: [optionalMoney(firstOpeningBalance), optionalMoney(secondOpeningBalance)],
+      monthlyOpeningMonth: currentMonthKey(),
     } as LocalSettings)
     Widget.reloadAll()
-    setMessage("已保存显示阈值和刷新设置，并请求刷新小组件")
+    setMessage("已保存余额阈值、月初金额和刷新设置，并请求刷新小组件")
   }
 
   async function testBoxJs() {
@@ -174,6 +194,24 @@ function SettingsView() {
             title="刷新间隔（分钟）"
             value={refreshMinutes}
             onChanged={setRefreshMinutes}
+          />
+        </Section>
+
+        <Section
+          header={<Text>每月初始金额</Text>}
+          footer={<Text>仅对当前月份生效，并按 BoxJs 中的账户顺序填写。留空时自动采用当月首次成功查询的余额；手动修改后，本月已用电会按新金额重新计算，充值仍不会计入用电。</Text>}
+        >
+          <TextField
+            title="第 1 户月初金额（元）"
+            value={firstOpeningBalance}
+            onChanged={setFirstOpeningBalance}
+            prompt="留空自动记录"
+          />
+          <TextField
+            title="第 2 户月初金额（元）"
+            value={secondOpeningBalance}
+            onChanged={setSecondOpeningBalance}
+            prompt="留空自动记录"
           />
         </Section>
 

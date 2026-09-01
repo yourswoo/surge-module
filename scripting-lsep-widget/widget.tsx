@@ -5,6 +5,7 @@ import {
   Text,
   VStack,
   Widget,
+  ZStack,
   modifiers,
 } from "scripting"
 import { Account, BalanceInfo, buildAccounts, formatMoney, queryAccount } from "./lsep-api"
@@ -12,6 +13,7 @@ import { readRuntimeConfigFromBoxJs } from "./boxjs"
 
 const SETTINGS_KEY = "lsep_widget_settings_v2"
 const CACHE_KEY = "lsep_widget_cache_v2"
+const USAGE_KEY = "lsep_widget_monthly_usage_v1"
 const DEFAULT_UA = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 MicroMessenger/8.0.49(0x18003123) NetType/WIFI Language/zh_CN"
 
 type LocalSettings = {
@@ -19,6 +21,8 @@ type LocalSettings = {
   refreshMinutes: number
   lowBalanceThreshold: number
   criticalBalanceThreshold: number
+  monthlyOpeningBalances: Array<number | null>
+  monthlyOpeningMonth: string
 }
 
 type PublicSettings = {
@@ -34,11 +38,25 @@ type DisplayResult = {
   info: BalanceInfo | null
   source: "live" | "cache" | "none"
   updatedAt: number
+  monthlyUsed: number
   error?: string
 }
 
 type CacheData = {
   items: Record<string, { info: BalanceInfo; updatedAt: number }>
+}
+
+type MonthlyUsageRecord = {
+  month: string
+  openingBalance: number
+  lastBalance: number
+  used: number
+  updatedAt: number
+  manualOpening?: boolean
+}
+
+type MonthlyUsageData = {
+  items: Record<string, MonthlyUsageRecord>
 }
 
 function loadLocalSettings(): LocalSettings {
@@ -47,31 +65,90 @@ function loadLocalSettings(): LocalSettings {
     refreshMinutes: 30,
     lowBalanceThreshold: 20,
     criticalBalanceThreshold: 10,
+    monthlyOpeningBalances: [null, null],
+    monthlyOpeningMonth: "",
     ...(Storage.get<LocalSettings>(SETTINGS_KEY) ?? {}),
   }
 }
 
 type Theme = {
-  cardBg: any
+  pageBg: any
+  cardRaised: any
+  usagePill: any
+  accentSoft: any
+  texture: any
   pageText: any
   mutedText: any
 }
 
 type RowVisual = {
   color: string
+  tint: any
   amount: string
   status: string
 }
 
 const THEME: Theme = {
-  cardBg: { light: "#FFFFFF", dark: "#1C1C1E" },
-  pageText: { light: "#111827", dark: "#FFFFFF" },
-  mutedText: { light: "#6B7280", dark: "#A1A1A6" },
+  pageBg: { light: "#EAF4F2", dark: "#061310" },
+  cardRaised: { light: "#FFFFFF", dark: "#112A25" },
+  usagePill: { light: "#FFFFFF", dark: "#1B493D" },
+  accentSoft: { light: "#D8F5EC", dark: "#123A31" },
+  texture: { light: "#288F78", dark: "#3BC49F" },
+  pageText: { light: "#102A25", dark: "#E8FFF8" },
+  mutedText: { light: "#5C756F", dark: "#83A99E" },
 }
 
 function shortNumber(number: string): string {
-  if (number.length <= 6) return number
-  return `${number.slice(0, 4)} · ${number.slice(-4)}`
+  const clean = number.replace(/\s+/g, "")
+  if (clean.length <= 4) return "****"
+  return `${clean.slice(0, 2)}****${clean.slice(-2)}`
+}
+
+function currentMonthKey(date = new Date()): string {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`
+}
+
+function moneyValue(value: number): number {
+  return Math.round(value * 100) / 100
+}
+
+function monthlyUsedFor(accountNumber: string, usage: MonthlyUsageData): number {
+  const record = usage.items[accountNumber]
+  return record?.month === currentMonthKey() ? moneyValue(record.used) : 0
+}
+
+function recordMonthlyUsage(accountNumber: string, balance: number, usage: MonthlyUsageData, now: number, manualOpening: number | null): number {
+  const month = currentMonthKey(new Date(now))
+  const current = moneyValue(balance)
+  const previous = usage.items[accountNumber]
+  const hasManualOpening = manualOpening != null && Number.isFinite(manualOpening)
+  const opening = hasManualOpening ? moneyValue(manualOpening as number) : current
+  const openingChanged = hasManualOpening
+    ? !previous?.manualOpening || previous.openingBalance !== opening
+    : !!previous?.manualOpening
+
+  if (!previous || previous.month !== month || openingChanged) {
+    const used = hasManualOpening && opening > current ? moneyValue(opening - current) : 0
+    usage.items[accountNumber] = {
+      month,
+      openingBalance: opening,
+      lastBalance: current,
+      used,
+      updatedAt: now,
+      manualOpening: hasManualOpening,
+    }
+    return used
+  }
+
+  const decrease = moneyValue(previous.lastBalance - current)
+  const used = decrease > 0 ? moneyValue(previous.used + decrease) : previous.used
+  usage.items[accountNumber] = {
+    ...previous,
+    lastBalance: current,
+    used,
+    updatedAt: now,
+  }
+  return used
 }
 
 function latestUpdate(results: DisplayResult[]): number {
@@ -95,56 +172,88 @@ function queryStatusColor(results: DisplayResult[]): string {
   return "#30D158"
 }
 
+function TechTexture({ compact = false }: { compact?: boolean }) {
+  const pattern = compact
+    ? "+    +    +    +    +    +"
+    : "+    +    +    +    +    +    +    +    +    +    +    +"
+  return (
+    <VStack
+      alignment="leading"
+      spacing={compact ? 9 : 12}
+      frame={{ maxWidth: "infinity", maxHeight: "infinity", alignment: "topLeading" }}
+      modifiers={modifiers().padding({ leading: 5, trailing: 5, top: 2, bottom: 2 }).opacity(0.16)}
+    >
+      <Text modifiers={modifiers().font(8).foregroundStyle(THEME.texture) as any}>{pattern}</Text>
+      <Text modifiers={modifiers().font(8).foregroundStyle(THEME.texture) as any}>  {pattern}</Text>
+      <Text modifiers={modifiers().font(8).foregroundStyle(THEME.texture) as any}>{pattern}</Text>
+      <Text modifiers={modifiers().font(8).foregroundStyle(THEME.texture) as any}>  {pattern}</Text>
+      <Text modifiers={modifiers().font(8).foregroundStyle(THEME.texture) as any}>{pattern}</Text>
+      {!compact ? <Text modifiers={modifiers().font(8).foregroundStyle(THEME.texture) as any}>  {pattern}</Text> : null}
+      {!compact ? <Text modifiers={modifiers().font(8).foregroundStyle(THEME.texture) as any}>{pattern}</Text> : null}
+    </VStack>
+  )
+}
+
 function rowVisual(result: DisplayResult, lowThreshold: number, criticalThreshold: number): RowVisual {
   if (!result.info) {
-    return { color: "#8E8E93", amount: "¥ --", status: "等待查询" }
+    return { color: "#8E8E93", tint: { light: "#F0F3F2", dark: "#172321" }, amount: "¥ --", status: "等待查询" }
   }
   if (result.info.owe > 0) {
-    return { color: "#FF453A", amount: `¥${formatMoney(result.info.owe)}`, status: "欠费，请及时充值" }
+    return { color: "#FF453A", tint: { light: "#FFF0F0", dark: "#321819" }, amount: `¥${formatMoney(result.info.owe)}`, status: "欠费，请及时充值" }
   }
   if (criticalThreshold > 0 && result.info.prepay <= criticalThreshold) {
-    return { color: "#FF453A", amount: `¥${formatMoney(result.info.prepay)}`, status: "余额不足，请及时充值" }
+    return { color: "#FF453A", tint: { light: "#FFF0F0", dark: "#321819" }, amount: `¥${formatMoney(result.info.prepay)}`, status: "余额不足，请及时充值" }
   }
   if (lowThreshold > 0 && result.info.prepay < lowThreshold) {
-    return { color: "#FF9F0A", amount: `¥${formatMoney(result.info.prepay)}`, status: "余额偏低" }
+    return { color: "#FF9F0A", tint: { light: "#FFF7E8", dark: "#302511" }, amount: `¥${formatMoney(result.info.prepay)}`, status: "余额偏低" }
   }
   return {
-    color: result.source === "live" ? "#30D158" : "#8E8E93",
+    color: result.source === "live" ? "#22C997" : "#8E8E93",
+    tint: result.source === "live"
+      ? { light: "#ECFBF6", dark: "#0D2B23" }
+      : { light: "#F0F3F2", dark: "#172321" },
     amount: `¥${formatMoney(result.info.prepay)}`,
     status: result.source === "live" ? "余额正常" : "缓存数据",
   }
 }
 
 function Header({ results, compact = false }: { results: DisplayResult[]; compact?: boolean }) {
-  const iconSize = compact ? 25 : 30
+  const iconSize = compact ? 23 : 28
   return (
-    <HStack alignment="center" spacing={7}>
-      <Image
-        imageUrl="https://yong.ing/ldt.PNG"
-        resizable
-        scaleToFit
-        frame={{ width: iconSize, height: iconSize }}
-      />
-      <Text
-        modifiers={modifiers()
-          .font(compact ? 11 : 12)
-          .foregroundStyle(THEME.pageText)
-          .fontWeight("semibold") as any}
-      >
-        乐电通
-      </Text>
-      <Spacer />
-      <HStack alignment="center" spacing={5}>
-        <Text modifiers={modifiers().font(compact ? 11 : 12).foregroundStyle(queryStatusColor(results) as any) as any}>
-          ●
-        </Text>
-        {!compact ? (
-          <Text modifiers={modifiers().font(9).foregroundStyle(THEME.mutedText) as any}>
-            {updateLabel(latestUpdate(results))}
+    <VStack alignment="leading" spacing={compact ? 4 : 6}>
+      <HStack alignment="center" spacing={8}>
+        <HStack modifiers={modifiers()
+          .padding(compact ? 4 : 5)
+          .background({ style: THEME.accentSoft, shape: { type: "rect", cornerRadius: compact ? 10 : 12 } } as any)}>
+          <Image
+            imageUrl="https://yong.ing/ldt.PNG"
+            resizable
+            scaleToFit
+            frame={{ width: iconSize, height: iconSize }}
+          />
+        </HStack>
+        <VStack alignment="leading" spacing={1}>
+          <Text modifiers={modifiers()
+            .font(compact ? 11 : 13)
+            .foregroundStyle(THEME.pageText)
+            .fontWeight("bold") as any}>
+            乐电通
           </Text>
-        ) : null}
+          {!compact ? (
+            <Text modifiers={modifiers().font(7).foregroundStyle(THEME.mutedText) as any}>
+              LESHAN POWER
+            </Text>
+          ) : null}
+        </VStack>
+        <Spacer />
+        <HStack alignment="center" spacing={4}>
+          <Text modifiers={modifiers().font(compact ? 9 : 10).foregroundStyle(queryStatusColor(results) as any) as any}>●</Text>
+          <Text modifiers={modifiers().font(compact ? 7 : 8).foregroundStyle(THEME.mutedText) as any}>
+            {compact ? "在线" : updateLabel(latestUpdate(results))}
+          </Text>
+        </HStack>
       </HStack>
-    </HStack>
+    </VStack>
   )
 }
 
@@ -156,7 +265,7 @@ function SmallRow({ result, lowThreshold, criticalThreshold }: { result: Display
       spacing={7}
       modifiers={modifiers()
         .padding({ leading: 9, trailing: 9, top: 7, bottom: 7 })
-        .background({ style: THEME.cardBg, shape: { type: "rect", cornerRadius: 12 } } as any)}
+        .background({ style: visual.tint, shape: { type: "rect", cornerRadius: 13 } } as any)}
     >
       <VStack
         modifiers={modifiers()
@@ -167,7 +276,7 @@ function SmallRow({ result, lowThreshold, criticalThreshold }: { result: Display
         <Text modifiers={modifiers().font(11).foregroundStyle(THEME.pageText).fontWeight("semibold") as any}>
           {result.account.label}
         </Text>
-        <Text modifiers={modifiers().font(8).foregroundStyle(THEME.mutedText) as any}>
+        <Text lineLimit={1} modifiers={modifiers().font(8).foregroundStyle(THEME.mutedText) as any}>
           {visual.status}
         </Text>
       </VStack>
@@ -187,7 +296,7 @@ function MediumRow({ result, lowThreshold, criticalThreshold }: { result: Displa
       spacing={9}
       modifiers={modifiers()
         .padding({ leading: 11, trailing: 11, top: 7, bottom: 7 })
-        .background({ style: THEME.cardBg, shape: { type: "rect", cornerRadius: 13 } } as any)}
+        .background({ style: visual.tint, shape: { type: "rect", cornerRadius: 14 } } as any)}
     >
       <VStack
         modifiers={modifiers()
@@ -198,7 +307,7 @@ function MediumRow({ result, lowThreshold, criticalThreshold }: { result: Displa
         <Text modifiers={modifiers().font(12).foregroundStyle(THEME.pageText).fontWeight("semibold") as any}>
           {result.account.label}
         </Text>
-        <Text modifiers={modifiers().font(9).foregroundStyle(THEME.mutedText) as any}>
+        <Text lineLimit={1} modifiers={modifiers().font(9).foregroundStyle(THEME.mutedText) as any}>
           户号 {shortNumber(result.account.number)} · {visual.status}
         </Text>
       </VStack>
@@ -210,22 +319,78 @@ function MediumRow({ result, lowThreshold, criticalThreshold }: { result: Displa
   )
 }
 
-function EmptyWidget({ message }: { message: string }) {
+function MediumAccountCard({ result, lowThreshold, criticalThreshold }: { result: DisplayResult; lowThreshold: number; criticalThreshold: number }) {
+  const visual = rowVisual(result, lowThreshold, criticalThreshold)
   return (
     <VStack
       alignment="leading"
-      spacing={8}
-      modifiers={modifiers().padding({ leading: 11, trailing: 11, top: 10, bottom: 10 })}
+      spacing={3}
+      frame={{ maxWidth: "infinity", maxHeight: "infinity", alignment: "topLeading" }}
+      modifiers={modifiers()
+        .padding({ leading: 9, trailing: 9, top: 7, bottom: 7 })
+        .background({ style: visual.tint, shape: { type: "rect", cornerRadius: 14 } } as any)}
     >
-      <Header results={[]} />
+      <HStack alignment="center" spacing={6}>
+        <VStack modifiers={modifiers()
+          .frame({ width: 4, height: 28 })
+          .background({ style: visual.color as any, shape: { type: "rect", cornerRadius: 999 } } as any)} />
+        <VStack alignment="leading" spacing={1}>
+          <Text lineLimit={1} modifiers={modifiers().font(11).foregroundStyle(THEME.pageText).fontWeight("bold") as any}>
+            {result.account.label}
+          </Text>
+          <Text lineLimit={1} modifiers={modifiers().font(7).foregroundStyle(THEME.mutedText) as any}>
+            户号 {shortNumber(result.account.number)}
+          </Text>
+        </VStack>
+        <Spacer />
+        <Text modifiers={modifiers().font(22).foregroundStyle("#30D158").opacity(0.14) as any}>⚡︎</Text>
+      </HStack>
+      <Text modifiers={modifiers().font(17).foregroundStyle(visual.color as any).fontWeight("bold") as any}>
+        {visual.amount}
+      </Text>
+      <Text lineLimit={1} modifiers={modifiers().font(7).foregroundStyle(THEME.mutedText) as any}>
+        {visual.status}
+      </Text>
       <HStack
+        alignment="center"
+        spacing={2}
         modifiers={modifiers()
-          .padding(11)
-          .background({ style: THEME.cardBg, shape: { type: "rect", cornerRadius: 13 } } as any)}
+          .padding({ leading: 6, trailing: 6, top: 4, bottom: 4 })
+          .background({ style: THEME.usagePill, shape: { type: "rect", cornerRadius: 8 } } as any)}
       >
-        <Text modifiers={modifiers().font(10).foregroundStyle(THEME.mutedText) as any}>{message}</Text>
+        <Text lineLimit={1} modifiers={modifiers().font(7).foregroundStyle(THEME.mutedText) as any}>本月已用电：</Text>
+        <Spacer />
+        <Text lineLimit={1} modifiers={modifiers().font(9).foregroundStyle(THEME.pageText).fontWeight("semibold") as any}>
+          ¥{formatMoney(result.monthlyUsed)}
+        </Text>
       </HStack>
     </VStack>
+  )
+}
+
+function EmptyWidget({ message }: { message: string }) {
+  return (
+    <ZStack
+      widgetBackground={THEME.pageBg}
+      frame={{ maxWidth: "infinity", maxHeight: "infinity" }}
+    >
+      <TechTexture />
+      <VStack
+        alignment="leading"
+        spacing={8}
+        frame={{ maxWidth: "infinity", maxHeight: "infinity", alignment: "topLeading" }}
+        modifiers={modifiers().padding({ leading: 11, trailing: 11, top: 10, bottom: 10 })}
+      >
+        <Header results={[]} />
+        <HStack
+          modifiers={modifiers()
+            .padding(11)
+            .background({ style: THEME.cardRaised, shape: { type: "rect", cornerRadius: 14 } } as any)}
+        >
+          <Text modifiers={modifiers().font(10).foregroundStyle(THEME.mutedText) as any}>{message}</Text>
+        </HStack>
+      </VStack>
+    </ZStack>
   )
 }
 
@@ -252,35 +417,79 @@ function BalanceWidget({ results, settings }: { results: DisplayResult[]; settin
   }
 
   const small = family === "systemSmall"
-  const limit = small ? 2 : family === "systemLarge" ? 7 : 4
+  if (family === "systemMedium") {
+    const mediumResults = results.slice(0, 2)
+    return (
+      <ZStack
+        widgetBackground={THEME.pageBg}
+        frame={{ maxWidth: "infinity", maxHeight: "infinity" }}
+      >
+        <TechTexture />
+        <VStack
+          alignment="leading"
+          spacing={7}
+          frame={{ maxWidth: "infinity", maxHeight: "infinity", alignment: "topLeading" }}
+          modifiers={modifiers().padding({ leading: 11, trailing: 11, top: 9, bottom: 9 })}
+        >
+          <Header results={results} />
+          <HStack alignment="top" spacing={8} frame={{ maxWidth: "infinity", maxHeight: "infinity" }}>
+            {mediumResults.map(result => (
+              <MediumAccountCard
+                key={result.account.number}
+                result={result}
+                lowThreshold={settings.lowBalanceThreshold}
+                criticalThreshold={settings.criticalBalanceThreshold}
+              />
+            ))}
+          </HStack>
+        </VStack>
+      </ZStack>
+    )
+  }
+
+  const limit = small ? 2 : 7
   const visible = results.slice(0, limit)
 
   return small ? (
-    <VStack
-      alignment="leading"
-      spacing={8}
-      modifiers={modifiers().padding({ leading: 9, trailing: 9, top: 9, bottom: 9 })}
+    <ZStack
+      widgetBackground={THEME.pageBg}
+      frame={{ maxWidth: "infinity", maxHeight: "infinity" }}
     >
-      <Header results={results} compact />
-      <VStack alignment="leading" spacing={6}>
-        {visible.map(result => (
-          <SmallRow key={result.account.number} result={result} lowThreshold={settings.lowBalanceThreshold} criticalThreshold={settings.criticalBalanceThreshold} />
-        ))}
+      <TechTexture compact />
+      <VStack
+        alignment="leading"
+        spacing={8}
+        frame={{ maxWidth: "infinity", maxHeight: "infinity", alignment: "topLeading" }}
+        modifiers={modifiers().padding({ leading: 9, trailing: 9, top: 9, bottom: 9 })}
+      >
+        <Header results={results} compact />
+        <VStack alignment="leading" spacing={6}>
+          {visible.map(result => (
+            <SmallRow key={result.account.number} result={result} lowThreshold={settings.lowBalanceThreshold} criticalThreshold={settings.criticalBalanceThreshold} />
+          ))}
+        </VStack>
       </VStack>
-    </VStack>
+    </ZStack>
   ) : (
-    <VStack
-      alignment="leading"
-      spacing={8}
-      modifiers={modifiers().padding({ leading: 11, trailing: 11, top: 10, bottom: 10 })}
+    <ZStack
+      widgetBackground={THEME.pageBg}
+      frame={{ maxWidth: "infinity", maxHeight: "infinity" }}
     >
-      <Header results={results} />
-      <VStack alignment="leading" spacing={6}>
-        {visible.map(result => (
-          <MediumRow key={result.account.number} result={result} lowThreshold={settings.lowBalanceThreshold} criticalThreshold={settings.criticalBalanceThreshold} />
-        ))}
+      <TechTexture />
+      <VStack
+        alignment="leading"
+        spacing={8}
+        frame={{ maxWidth: "infinity", maxHeight: "infinity", alignment: "topLeading" }}
+        modifiers={modifiers().padding({ leading: 11, trailing: 11, top: 10, bottom: 10 })}
+      >
+        <Header results={results} />
+        <VStack alignment="leading" spacing={6}>
+          {visible.map(result => (
+            <MediumRow key={result.account.number} result={result} lowThreshold={settings.lowBalanceThreshold} criticalThreshold={settings.criticalBalanceThreshold} />
+          ))}
+        </VStack>
       </VStack>
-    </VStack>
+    </ZStack>
   )
 }
 
@@ -326,11 +535,14 @@ async function main() {
 
   const cache = Storage.get<CacheData>(CACHE_KEY) ?? { items: {} }
   const nextCache: CacheData = { items: { ...cache.items } }
+  const usage = Storage.get<MonthlyUsageData>(USAGE_KEY) ?? { items: {} }
+  const nextUsage: MonthlyUsageData = { items: { ...usage.items } }
   const results: DisplayResult[] = []
   let cookie = runtime.cookie
   const userAgent = runtime.userAgent || DEFAULT_UA
 
-  for (const account of accounts) {
+  for (let accountIndex = 0; accountIndex < accounts.length; accountIndex += 1) {
+    const account = accounts[accountIndex]
     let queried: Awaited<ReturnType<typeof queryAccount>> | null = null
     let queryError: unknown = null
     try {
@@ -342,8 +554,17 @@ async function main() {
     if (queried) {
       cookie = queried.cookie || cookie
       const updatedAt = Date.now()
+      const monthlyUsed = recordMonthlyUsage(
+        account.number,
+        queried.info.value,
+        nextUsage,
+        updatedAt,
+        localSettings.monthlyOpeningMonth === currentMonthKey()
+          ? localSettings.monthlyOpeningBalances?.[accountIndex] ?? null
+          : null,
+      )
       nextCache.items[account.number] = { info: queried.info, updatedAt }
-      results.push({ account, info: queried.info, source: "live", updatedAt })
+      results.push({ account, info: queried.info, source: "live", updatedAt, monthlyUsed })
     } else {
       const cached = cache.items[account.number]
       results.push({
@@ -351,12 +572,14 @@ async function main() {
         info: cached?.info ?? null,
         source: cached ? "cache" : "none",
         updatedAt: cached?.updatedAt ?? 0,
+        monthlyUsed: monthlyUsedFor(account.number, nextUsage),
         error: String((queryError as any)?.message ?? queryError ?? "未知错误"),
       })
     }
   }
 
   Storage.set(CACHE_KEY, nextCache)
+  Storage.set(USAGE_KEY, nextUsage)
 
   Widget.present(<BalanceWidget results={results} settings={settings} />, policy)
 }
