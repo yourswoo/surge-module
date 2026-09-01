@@ -1,0 +1,107 @@
+{
+  "id": "water.bill",
+  "name": "云润水费",
+  "author": "Yong",
+  "icon": "drop.fill",
+  "apps": [
+    {
+      "id": "water_bill",
+      "name": "云润水费查询",
+      "keys": [
+        "water_bill_appid",
+        "water_bill_openid",
+        "water_bill_customerid",
+        "water_bill_cookie",
+        "water_bill_ua",
+        "water_bill_captured_at",
+        "water_bill_label",
+        "water_bill_title",
+        "water_bill_months",
+        "water_bill_refresh_minutes",
+        "water_bill_capnotify"
+      ],
+      "settings": [
+        {
+          "id": "water_bill_appid",
+          "name": "微信 AppID",
+          "val": "",
+          "type": "text",
+          "desc": "打开水费账单或缴费页面时自动抓取"
+        },
+        {
+          "id": "water_bill_openid",
+          "name": "微信 OpenID",
+          "val": "",
+          "type": "textarea",
+          "rows": 2,
+          "desc": "敏感身份参数；自动抓取，请勿分享"
+        },
+        {
+          "id": "water_bill_customerid",
+          "name": "客户 ID",
+          "val": "",
+          "type": "textarea",
+          "rows": 2,
+          "desc": "敏感身份参数；自动抓取，请勿分享"
+        },
+        {
+          "id": "water_bill_cookie",
+          "name": "Cookie",
+          "val": "",
+          "type": "textarea",
+          "rows": 3,
+          "desc": "自动抓取并随查询携带；当前接口主要校验表单身份参数，Cookie 可为空"
+        },
+        {
+          "id": "water_bill_ua",
+          "name": "微信 User-Agent",
+          "val": "",
+          "type": "textarea",
+          "rows": 3,
+          "desc": "打开微信水费页面时自动抓取"
+        },
+        {
+          "id": "water_bill_captured_at",
+          "name": "上次抓取时间",
+          "val": "",
+          "type": "text",
+          "desc": "由 Surge 自动更新"
+        },
+        {
+          "id": "water_bill_label",
+          "name": "账户标签",
+          "val": "我家水费",
+          "type": "text",
+          "desc": "小组件上显示的名称"
+        },
+        {
+          "id": "water_bill_title",
+          "name": "小组件标题",
+          "val": "水费",
+          "type": "text"
+        },
+        {
+          "id": "water_bill_months",
+          "name": "历史账单月数",
+          "val": "6",
+          "type": "text",
+          "desc": "建议 1–12；中号组件最多展示最近 3 期，大号组件最多展示最近 6 期"
+        },
+        {
+          "id": "water_bill_refresh_minutes",
+          "name": "刷新间隔（分钟）",
+          "val": "30",
+          "type": "text",
+          "desc": "由 iOS 决定实际刷新时间，建议不少于 15 分钟"
+        },
+        {
+          "id": "water_bill_capnotify",
+          "name": "抓取通知",
+          "val": "1",
+          "type": "text",
+          "desc": "1 开启，0 关闭"
+        }
+      ]
+    }
+  ]
+}

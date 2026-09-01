@@ -1,0 +1,20 @@
+{
+  "name": "云润水费",
+  "icon": "drop.fill",
+  "color": "#1D9BF0",
+  "version": "1.0.0",
+  "description": "从 BoxJS 实时读取 Surge 抓取的身份配置，查询账户余额与历史水费账单，并通过小组件展示。",
+  "localizedNames": {
+    "zh": "云润水费",
+    "en": "Water Bill"
+  },
+  "localizedDescriptions": {
+    "zh": "实时查询余额、当期应收、用水量和历史账单；支持小、中、大号组件与缓存回退。",
+    "en": "Live water balance, usage and bill history with small, medium and large widgets."
+  },
+  "remoteResource": {
+    "url": "https://raw.githubusercontent.com/yourswoo/surge-module/refs/heads/modules/water-bill-widget.scripting",
+    "autoUpdateInterval": 86400
+  }
+}
+
