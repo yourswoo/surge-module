@@ -6,7 +6,7 @@
 DOMAIN,wx.chinayunrun.com,DIRECT
 
 [Script]
-water-bill-capture = type=http-request, pattern=^https?://wx\.chinayunrun\.com(?::80)?/wechat/(?:billCharge|billMsg/findBillList)(?:\?|$), requires-body=1, timeout=10, script-path=https://raw.githubusercontent.com/yourswoo/surge-module/refs/heads/modules/water-bill.js
+water-bill-capture = type=http-request, pattern=^https?://wx\.chinayunrun\.com(?::80)?/wechat/(?:billCharge|billMsg/findBillList)(?:\?|$), requires-body=1, timeout=10, script-path=https://raw.githubusercontent.com/yourswoo/surge-module/refs/heads/waterbill/water-bill.js
 
 [MITM]
 hostname = %APPEND% wx.chinayunrun.com
