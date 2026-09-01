@@ -1,27 +1,57 @@
-# 乐电通电费
+# 乐山电力电费小组件
 
-这是乐电通电费 Scripting 小组件，通过 BoxJs HTTP 查询接口实时读取全部查询配置，并提供自适应明暗主题、双户余额和月度用电金额统计。
+在 iPhone 和 iPad 的 Scripting 小组件中查看乐山电力账户信息。账户配置由 Surge、Quantumult X 等支持脚本与 BoxJS 的网络工具从“乐电通公众号”保存到本机，Scripting 随后读取这些配置并查询电费。
 
-## 工作方式
+## 主要功能
 
-每次点击“测试读取全部配置”“立即查询电费”或刷新小组件时，脚本都会读取：
+- 支持单户和多户电费账户。
+- 显示当前余额、欠费和余额预警状态。
+- 余额正常、偏低、余额不足或欠费时，金额、⚡符号和胶囊会显示对应颜色。
+- 支持浅色与深色模式。
+- 统计本月已用电金额，并查询上一个自然月的电费账单。
+- 上月账单尚未生成时显示“账单未出”。
+- 数据 12 小时内有变化时显示绿色圆点；超过 12 小时没有变化时显示黄色圆点和上次更新时间。
+- 可在 BoxJS 中修改户名、余额阈值和每月初始余额。
 
-`lsep_balance_number`、`lsep_balance_label`、`lsep_balance_token`、`lsep_balance_openid`、`lsep_balance_wechaId`、`lsep_balance_cookie`、`lsep_balance_ua`、`lsep_balance_title`、`lsep_balance_threshold`、`lsep_balance_critical_threshold`、`lsep_balance_monthly_opening` 和 `lsep_balance_monthly_opening_month`。
+## 使用方法
 
-这些值只在当前一次查询中使用。脚本不会把账户字段、Cookie、余额阈值或每月初始余额写入 Scripting 的 Keychain 或设置存储，也不会使用这些字段的本地配置兜底。Scripting 本地仅保存 BoxJs 地址、刷新间隔、余额显示缓存和月度统计账本。
+### 1. 准备网络工具和 BoxJS
 
-余额状态由 BoxJs 中的两个全局阈值控制：默认低于 20 元显示橙色“余额偏低”，达到或低于 10 元显示红色“余额不足，请及时充值”，其余显示绿色“余额正常”。
+安装一款支持脚本重写和 BoxJS 的网络工具，例如 Surge 或 Quantumult X，并安装 BoxJS。
 
-标题栏使用结果变化状态提示：最近 12 小时内余额或电表更新时间发生过变化时只显示绿色圆点；连续超过 12 小时没有变化，或本轮查询失败而使用缓存时，显示黄色圆点及上次数据变化时间。旧版缓存会自动沿用最近一次成功查询时间，不需要清除数据。
+本仓库当前直接提供 Surge 模块；使用其他网络工具时，需要按照对应工具的格式添加相同的脚本配置。
 
-中号小组件显示 BoxJs 中前两户的信息。每户分别记录本月用电金额：余额下降计入用电，余额增加视为充值且不会冲减累计值。可在 BoxJs 中按账户顺序填写每月初始余额，并填写对应月份；留空或月份不匹配时采用当月首次成功查询的余额。组件还会通过 `waterChargesQuery` 查询上一个自然月账单；账单尚未出现在接口列表中时显示“账单未出”。
+- [安装 Surge 乐电通模块](https://raw.githubusercontent.com/yourswoo/surge-module/refs/heads/modules/dianfei.js)
+- [添加乐电通 BoxJS 配置](https://raw.githubusercontent.com/yourswoo/surge-module/refs/heads/modules/lsep.boxjs.json)
 
-## 测试步骤
+安装完成后，请启用对应模块和网络工具。
 
-1. 确认 BoxJs 的 `lsep_balance_cookie` 已有有效值。
-2. 导入 `lsep-electricity-widget.scripting`。
-3. 保持 BoxJs 地址为 `https://boxjs.com`。
-4. 点击“测试读取全部配置”。
-5. 读取成功后，点击“立即查询电费”。
+### 2. 从乐电通公众号保存配置
 
-原 Surge API 版本已在仓库的 `backups/surge-api/` 中保留。
+1. 打开微信中的“乐电通公众号”。
+2. 进入电费查询页面并正常查询一次电费。
+3. 看到“已抓取到乐电通 Cookie”的提示后，户号、Token、OpenID、Cookie 和微信 UA 等查询配置会保存到本机 BoxJS。
+4. 打开 BoxJS 中的“乐电通电费”，确认账户信息已经出现。多户用户可分别查询一次，并在 BoxJS 中调整户名标签、余额阈值和每月初始余额。
+
+### 3. 安装 Scripting 小组件脚本
+
+先在 App Store 安装 Scripting，然后导入本项目脚本：
+
+- [一键导入乐山电力电费小组件](https://scripting.fun/import_scripts?urls=%5B%22https%3A%2F%2Fraw.githubusercontent.com%2Fyourswoo%2Fsurge-module%2Frefs%2Fheads%2Fmodules%2Flsep-electricity-widget.scripting%22%5D)
+- [直接下载安装包](https://raw.githubusercontent.com/yourswoo/surge-module/refs/heads/modules/lsep-electricity-widget.scripting)
+
+导入后打开“乐电通电费”脚本：
+
+1. 保持 BoxJS 地址为 `https://boxjs.com`。
+2. 点击“测试读取全部配置”，确认能够读取账户和 Cookie。
+3. 点击“立即查询电费”，检查余额查询是否成功。
+4. 设置小组件刷新间隔，然后点击“保存并刷新小组件”。
+
+### 4. 添加到桌面
+
+1. 长按 iOS 桌面空白处并点击添加小组件。
+2. 搜索并选择 Scripting。
+3. 添加小号、中号或其他支持的尺寸。
+4. 编辑小组件并选择“乐电通电费”脚本。
+
+建议保持网络工具和乐电通模块启用。Surge 模块会静默维持 Cookie 会话，Scripting 小组件即可持续查询并及时显示电费信息。
