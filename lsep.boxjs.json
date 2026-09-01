@@ -16,6 +16,9 @@
         "lsep_balance_wechaId",
         "lsep_balance_label",
         "lsep_balance_threshold",
+        "lsep_balance_critical_threshold",
+        "lsep_balance_monthly_opening",
+        "lsep_balance_monthly_opening_month",
         "lsep_balance_title",
         "lsep_balance_capnotify",
         "lsep_balance_debug"
@@ -78,10 +81,32 @@
         },
         {
           "id": "lsep_balance_threshold",
-          "name": "低余额阈值",
+          "name": "余额偏低阈值",
           "val": "20",
           "type": "text",
-          "desc": "单位：元；填 0 可关闭低余额判断"
+          "desc": "单位：元；低于此金额显示橙色"
+        },
+        {
+          "id": "lsep_balance_critical_threshold",
+          "name": "余额不足阈值",
+          "val": "10",
+          "type": "text",
+          "desc": "单位：元；达到或低于此金额显示红色，并且不能高于余额偏低阈值"
+        },
+        {
+          "id": "lsep_balance_monthly_opening",
+          "name": "每月初始余额",
+          "val": "",
+          "type": "textarea",
+          "rows": 2,
+          "desc": "按户号顺序填写，多户用英文逗号分隔；留空时采用当月首次成功查询的余额"
+        },
+        {
+          "id": "lsep_balance_monthly_opening_month",
+          "name": "初始余额所属月份",
+          "val": "",
+          "type": "text",
+          "desc": "格式 YYYY-MM，例如 2026-09；月份不匹配时不会使用手动初始余额"
         },
         {
           "id": "lsep_balance_title",
