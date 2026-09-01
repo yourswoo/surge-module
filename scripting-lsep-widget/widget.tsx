@@ -281,7 +281,7 @@ function Header({ results, compact = false }: { results: DisplayResult[]; compac
           </Text>
           {!compact ? (
             <Text modifiers={modifiers().font(7).foregroundStyle(THEME.mutedText) as any}>
-              LESHAN ELECTRIC POEWER
+              LESHAN ELECTRIC POWER
             </Text>
           ) : null}
         </VStack>
