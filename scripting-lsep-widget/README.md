@@ -1,6 +1,6 @@
 # 乐山电力电费小组件
 
-在 iPhone 和 iPad 的 Scripting 小组件中查看乐山电力电费余额信息。账户配置由 Surge、Quantumult X 等支持脚本与 BoxJS 的网络工具从“乐电通”公众号保存到本机，Scripting 随后读取这些配置并查询电费。
+在 iPhone 和 iPad 的 Scripting 小组件中查看乐山电力电费余额信息。
 
 ## 主要功能
 
