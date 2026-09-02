@@ -1,6 +1,6 @@
 # 港华燃气 Scripting 小组件
 
-小组件每次刷新时从 BoxJS 读取 Surge 抓取的 Bearer、Cookie、UA、Referer 和三个已签名查询 URL，然后查询余额、待缴、表数、阶梯额度与历史账单。
+小组件每次刷新时从 BoxJS 读取 Surge 抓取的 Bearer、Cookie、UA、Referer、`subsId` 和 `orgId`，现场生成 `timestamp + sign` 后查询余额、待缴、表数、阶梯额度与历史账单。
 
 - 中号组件包含当前阶梯内的额度进度条。
 - 查询失败时显示最近一次成功结果，并标记为缓存数据。

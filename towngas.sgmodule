@@ -1,5 +1,5 @@
 #!name=港华燃气账户查询
-#!desc=自动抓取港华燃气查询配置；面板展示账户数据；默认每 80 分钟静默查询并续期 Cookie；定时 cron 仅负责推送账户通知。
+#!desc=自动抓取港华主业务 Bearer 和账户 ID，动态生成查询签名；默认每 80 分钟静默查询；定时 cron 仅负责推送账户通知。
 #!category=Utility
 #!arguments=panel_refresh:900,session_refresh:80,cronexp:0 9 * * *
 #!arguments-desc=panel_refresh: Surge 面板刷新间隔（秒），默认 900；填 -1 关闭面板自动刷新。\nsession_refresh: Cookie 静默续期间隔（分钟），默认 80；填 0 关闭。\ncronexp: 账户通知时间，默认每天 09:00；只有此任务会发送 Surge 通知，修改后需重新加载模块。
@@ -20,8 +20,8 @@ towngas-account-refresh = type=cron, cronexp="*/10 * * * *", timeout=30, wake-sy
 # 账户通知：默认每天 09:00 查询一次，并将余额、待缴、表数、阶梯和最近账单推送到 Surge。
 towngas-account-cron = type=cron, cronexp="{{{cronexp}}}", timeout=30, wake-system=1, script-path=https://raw.githubusercontent.com/yourswoo/surge-module/refs/heads/gasbill/towngas.js, argument=mode=cron
 
-# 打开“充值购气”页抓取 preCheck / gasStepFee；打开“历史账单”页抓取 queryHistoryFee。
-towngas-account-capture = type=http-request, pattern=^https://weixin\.towngasvcc\.com/nv1/vcc-cbs/charge/(?:preCheck|gasStepFee|queryHistoryFee)(?:\?|$), requires-body=0, timeout=10, script-path=https://raw.githubusercontent.com/yourswoo/surge-module/refs/heads/gasbill/towngas.js, argument=mode=capture
+# 打开港华页面即可从 getLoginUserInfo / queryBindList 更新主业务 Bearer；进入充值购气页补齐 subsId / orgId。
+towngas-account-capture = type=http-request, pattern=^https://weixin\.towngasvcc\.com/nv1/vcc-cbs/(?:usersubs/(?:getLoginUserInfo|queryBindList)|charge/(?:preCheck|gasStepFee|queryHistoryFee))(?:\?|$), requires-body=0, timeout=10, script-path=https://raw.githubusercontent.com/yourswoo/surge-module/refs/heads/gasbill/towngas.js, argument=mode=capture
 
 [MITM]
 hostname = %APPEND% weixin.towngasvcc.com

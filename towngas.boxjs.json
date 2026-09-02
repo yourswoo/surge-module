@@ -14,9 +14,6 @@
         "towngas_referer",
         "towngas_subs_id",
         "towngas_org_id",
-        "towngas_precheck_url",
-        "towngas_step_url",
-        "towngas_history_url",
         "towngas_label",
         "towngas_title",
         "towngas_balance_threshold",
@@ -74,7 +71,7 @@
           "val": "",
           "type": "textarea",
           "rows": 3,
-          "desc": "由 Surge 自动抓取，请勿对外分享"
+          "desc": "打开港华页面后由 Surge 从主业务请求自动更新，请勿对外分享"
         },
         {
           "id": "towngas_cookie",
@@ -106,7 +103,7 @@
           "val": "",
           "type": "textarea",
           "rows": 2,
-          "desc": "由 Surge 自动抓取"
+          "desc": "进入充值购气页后由 Surge 自动抓取；用于动态构造查询"
         },
         {
           "id": "towngas_org_id",
@@ -114,31 +111,7 @@
           "val": "",
           "type": "textarea",
           "rows": 2,
-          "desc": "由 Surge 自动抓取"
-        },
-        {
-          "id": "towngas_precheck_url",
-          "name": "账户概览签名 URL",
-          "val": "",
-          "type": "textarea",
-          "rows": 4,
-          "desc": "包含 preCheck 的 timestamp 和 sign，由 Surge 自动更新"
-        },
-        {
-          "id": "towngas_step_url",
-          "name": "阶梯气价签名 URL",
-          "val": "",
-          "type": "textarea",
-          "rows": 4,
-          "desc": "包含 gasStepFee 的 timestamp 和 sign，由 Surge 自动更新"
-        },
-        {
-          "id": "towngas_history_url",
-          "name": "历史账单签名 URL",
-          "val": "",
-          "type": "textarea",
-          "rows": 4,
-          "desc": "包含 queryHistoryFee 的 timestamp 和 sign，打开历史账单页后自动更新"
+          "desc": "进入充值购气页后由 Surge 自动抓取；用于动态构造查询"
         },
         {
           "id": "towngas_captured_at",

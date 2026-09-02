@@ -1,9 +1,9 @@
 /*
  * 港华燃气账户查询·Surge 抓取与面板
- * v1.1.1
+ * v1.2.0
  *
- * capture: 保存 preCheck / gasStepFee / queryHistoryFee 完整签名 URL、
- *          Authorization、Cookie、UA、Referer、subsId 和 orgId。
+ * capture: 从港华主业务请求保存 Authorization、Cookie、UA、Referer、
+ *          subsId 和 orgId；保险接口使用另一套 Token，不参与抓取。
  * panel:   读取 BoxJS 共享键，查询账户余额、表数、阶梯和最近账单。
  * refresh: 每隔指定分钟静默查询，并把响应中的新 Cookie 合并回 BoxJS。
  * cron:    查询账户数据并推送 Surge 通知。
@@ -11,7 +11,9 @@
 
 'use strict';
 
-const VERSION = '1.1.1';
+const VERSION = '1.2.0';
+const API_BASE = 'https://weixin.towngasvcc.com/nv1/vcc-cbs';
+const SIGN_SUFFIX = 'hbasesoft.com-prod';
 const SESSION_RUN_KEY = 'towngas_session_refresh_at';
 const KEYS = {
   authorization: 'towngas_authorization',
@@ -20,9 +22,6 @@ const KEYS = {
   referer: 'towngas_referer',
   subsId: 'towngas_subs_id',
   orgId: 'towngas_org_id',
-  precheckUrl: 'towngas_precheck_url',
-  stepUrl: 'towngas_step_url',
-  historyUrl: 'towngas_history_url',
   label: 'towngas_label',
   title: 'towngas_title',
   balanceThreshold: 'towngas_balance_threshold',
@@ -112,14 +111,11 @@ function queryParams(url) {
 }
 
 function endpointName(url) {
-  const match = String(url || '').match(/\/charge\/(preCheck|gasStepFee|queryHistoryFee)(?:\?|$)/);
-  return match ? match[1] : '';
-}
-
-function endpointKey(name) {
-  if (name === 'preCheck') return KEYS.precheckUrl;
-  if (name === 'gasStepFee') return KEYS.stepUrl;
-  if (name === 'queryHistoryFee') return KEYS.historyUrl;
+  const text = String(url || '');
+  const charge = text.match(/\/charge\/(preCheck|gasStepFee|queryHistoryFee)(?:\?|$)/);
+  if (charge) return charge[1];
+  const usersubs = text.match(/\/usersubs\/(getLoginUserInfo|queryBindList)(?:\?|$)/);
+  if (usersubs) return usersubs[1];
   return '';
 }
 
@@ -139,8 +135,7 @@ function capture() {
     if (typeof $request === 'undefined') throw new Error('抓取模式未获取请求');
     const url = String($request.url || '');
     const name = endpointName(url);
-    const urlKey = endpointKey(name);
-    if (!urlKey) throw new Error('不是受支持的燃气查询接口');
+    if (!name) throw new Error('不是受支持的港华主业务接口');
 
     const params = queryParams(url);
     const authorization = header($request.headers, 'Authorization');
@@ -148,10 +143,9 @@ function capture() {
     const userAgent = header($request.headers, 'User-Agent');
     const referer = header($request.headers, 'Referer');
     const previousAuth = read(KEYS.authorization);
-    const firstEndpointCapture = !read(urlKey);
+    const beforeComplete = !!(previousAuth && read(KEYS.subsId) && read(KEYS.orgId));
 
-    write(url, urlKey);
-    write(authorization, KEYS.authorization);
+    if (/^Bearer\s+\S+/i.test(authorization)) write(authorization, KEYS.authorization);
     write(cookie, KEYS.cookie);
     write(userAgent, KEYS.userAgent);
     write(referer, KEYS.referer);
@@ -159,13 +153,14 @@ function capture() {
     write(params.orgId, KEYS.orgId);
     write(new Date().toISOString(), KEYS.capturedAt);
 
-    const authChanged = authorization && authorization !== previousAuth;
-    if (read(KEYS.captureNotify) !== '0' && (firstEndpointCapture || authChanged) && typeof $notification !== 'undefined') {
-      const complete = [KEYS.precheckUrl, KEYS.stepUrl, KEYS.historyUrl].every(key => !!read(key));
+    const currentAuth = read(KEYS.authorization);
+    const authChanged = currentAuth && currentAuth !== previousAuth;
+    const complete = !!(currentAuth && read(KEYS.subsId) && read(KEYS.orgId));
+    if (read(KEYS.captureNotify) !== '0' && (authChanged || (!beforeComplete && complete)) && typeof $notification !== 'undefined') {
       $notification.post(
         '燃气查询配置已更新',
         name + ' · 户号 ' + mask(params.subsId || read(KEYS.subsId)),
-        complete ? '余额、阶梯和历史账单配置已齐全' : '请继续打开充值购气/历史账单页补齐接口'
+        complete ? 'Bearer、户号 ID 和燃气公司 ID 已齐全' : '请进入充值购气页补齐账户 ID'
       );
     }
     if (read(KEYS.debug) === '1') console.log('[towngas ' + VERSION + '] captured ' + name);
@@ -183,9 +178,67 @@ function numberValue(value) {
   return isFinite(parsed) ? parsed : 0;
 }
 
-function requestJson(url, label) {
+function md5(input) {
+  const text = unescape(encodeURIComponent(String(input)));
+  const words = [];
+  for (let i = 0; i < text.length; i += 1) {
+    words[i >> 2] = (words[i >> 2] || 0) | (text.charCodeAt(i) << ((i % 4) * 8));
+  }
+  words[text.length >> 2] = (words[text.length >> 2] || 0) | (0x80 << ((text.length % 4) * 8));
+  const lengthIndex = (((text.length + 8) >> 6) + 1) * 16 - 2;
+  words[lengthIndex] = text.length * 8;
+  words[lengthIndex + 1] = Math.floor(text.length / 0x20000000);
+
+  const shifts = [7, 12, 17, 22, 5, 9, 14, 20, 4, 11, 16, 23, 6, 10, 15, 21];
+  const constants = [];
+  for (let i = 0; i < 64; i += 1) constants[i] = (Math.abs(Math.sin(i + 1)) * 0x100000000) | 0;
+  let state = [0x67452301, -0x10325477, -0x67452302, 0x10325476];
+  const add = (a, b) => (a + b) | 0;
+  const rotate = (value, bits) => (value << bits) | (value >>> (32 - bits));
+
+  for (let offset = 0; offset < words.length; offset += 16) {
+    let a = state[0]; let b = state[1]; let c = state[2]; let d = state[3];
+    for (let i = 0; i < 64; i += 1) {
+      let f; let g; let shift;
+      if (i < 16) { f = (b & c) | (~b & d); g = i; shift = shifts[i % 4]; }
+      else if (i < 32) { f = (d & b) | (~d & c); g = (5 * i + 1) % 16; shift = shifts[4 + (i % 4)]; }
+      else if (i < 48) { f = b ^ c ^ d; g = (3 * i + 5) % 16; shift = shifts[8 + (i % 4)]; }
+      else { f = c ^ (b | ~d); g = (7 * i) % 16; shift = shifts[12 + (i % 4)]; }
+      const previousD = d;
+      d = c; c = b;
+      b = add(b, rotate(add(add(a, f), add(words[offset + g] || 0, constants[i])), shift));
+      a = previousD;
+    }
+    state = [add(state[0], a), add(state[1], b), add(state[2], c), add(state[3], d)];
+  }
+
+  return state.map(value => {
+    let out = '';
+    for (let i = 0; i < 4; i += 1) out += ((value >>> (i * 8)) & 0xff).toString(16).padStart(2, '0');
+    return out;
+  }).join('');
+}
+
+function requestSign(params) {
+  let source = '';
+  Object.keys(params).sort().forEach(key => {
+    if (key !== 'sign' && params[key] !== undefined && params[key] !== null && String(params[key]) !== '') {
+      source += key + String(params[key]);
+    }
+  });
+  return md5(source + SIGN_SUFFIX).toUpperCase();
+}
+
+function signedUrl(path, params) {
+  const all = Object.assign({}, params, { timestamp: String(Date.now()) });
+  const query = Object.keys(all).map(key => encodeURIComponent(key) + '=' + encodeURIComponent(String(all[key])));
+  query.push('sign=' + requestSign(all));
+  return API_BASE + path + '?' + query.join('&');
+}
+
+function requestJson(path, params, label) {
   return new Promise((resolve, reject) => {
-    if (!url) return reject(new Error('缺少 ' + label + ' 签名 URL'));
+    const url = signedUrl(path, params);
     const headers = {
       Accept: 'application/json, text/plain, */*',
       Authorization: read(KEYS.authorization),
@@ -244,11 +297,18 @@ function latestGasBill(history) {
 function money(value) { return numberValue(value).toFixed(2); }
 
 async function queryAccount() {
-  if (!read(KEYS.authorization)) throw new Error('请先在微信中打开燃气页面抓取配置');
+  const authorization = read(KEYS.authorization);
+  const subsId = read(KEYS.subsId);
+  const orgId = read(KEYS.orgId);
+  const missing = [];
+  if (!/^Bearer\s+\S+/i.test(authorization)) missing.push('Bearer');
+  if (!subsId) missing.push('subsId');
+  if (!orgId) missing.push('orgId');
+  if (missing.length) throw new Error('缺少 ' + missing.join('、') + '，请打开港华燃气和充值购气页');
   const results = await Promise.all([
-    requestJson(read(KEYS.precheckUrl), '账户概览'),
-    requestJson(read(KEYS.stepUrl), '阶梯气价'),
-    read(KEYS.historyUrl) ? requestJson(read(KEYS.historyUrl), '历史账单').catch(() => []) : Promise.resolve([]),
+    requestJson('/charge/preCheck', { subsId: subsId }, '账户概览'),
+    requestJson('/charge/gasStepFee', { subsId: subsId, orgId: orgId }, '阶梯气价'),
+    requestJson('/charge/queryHistoryFee', { orgId: orgId, subsId: subsId, pageSize: '30', pageIndex: '1' }, '历史账单').catch(() => []),
   ]);
   const account = results[0] || {};
   const step = results[1] || {};

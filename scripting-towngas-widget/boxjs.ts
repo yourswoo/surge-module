@@ -16,9 +16,8 @@ const KEYS = {
   cookie: "towngas_cookie",
   userAgent: "towngas_ua",
   referer: "towngas_referer",
-  precheckUrl: "towngas_precheck_url",
-  stepUrl: "towngas_step_url",
-  historyUrl: "towngas_history_url",
+  subsId: "towngas_subs_id",
+  orgId: "towngas_org_id",
   label: "towngas_label",
   title: "towngas_title",
   lowBalanceThreshold: "towngas_balance_threshold",
@@ -55,9 +54,8 @@ export async function readRuntimeConfig(baseUrl: string): Promise<RuntimeConfig>
   const raw = Object.fromEntries(names.map((name, index) => [name, values[index]])) as Record<keyof typeof KEYS, string>
   const missing: string[] = []
   if (!/^Bearer\s+\S+/i.test(raw.authorization)) missing.push(KEYS.authorization)
-  if (!raw.precheckUrl) missing.push(KEYS.precheckUrl)
-  if (!raw.stepUrl) missing.push(KEYS.stepUrl)
-  if (!raw.historyUrl) missing.push(KEYS.historyUrl)
+  if (!raw.subsId) missing.push(KEYS.subsId)
+  if (!raw.orgId) missing.push(KEYS.orgId)
   if (missing.length) throw new Error(`BoxJS 配置缺失：${missing.join("、")}`)
 
   const low = Math.max(0, numberSetting(raw.lowBalanceThreshold, 100))
@@ -68,9 +66,8 @@ export async function readRuntimeConfig(baseUrl: string): Promise<RuntimeConfig>
       cookie: raw.cookie,
       userAgent: raw.userAgent,
       referer: raw.referer,
-      precheckUrl: raw.precheckUrl,
-      stepUrl: raw.stepUrl,
-      historyUrl: raw.historyUrl,
+      subsId: raw.subsId,
+      orgId: raw.orgId,
     },
     label: raw.label || "我家燃气",
     title: raw.title || "港华燃气",

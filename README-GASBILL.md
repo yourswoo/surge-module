@@ -1,6 +1,6 @@
 # 港华燃气 Surge + BoxJS + Scripting 小组件
 
-本模块使用 Surge 在微信港华燃气页面抓取已签名的查询请求，BoxJS 保存运行时凭证，Scripting 小组件每次刷新时读取 BoxJS 并查询余额、待缴、表数、阶梯额度和历史账单。
+本模块使用 Surge 在微信港华燃气页面抓取主业务 Bearer 与账户 ID，BoxJS 保存运行时配置；Surge 和 Scripting 每次查询时现场生成 `timestamp + sign`，无需保存会过期的完整签名 URL。
 
 ## 文件
 
@@ -14,8 +14,8 @@
 
 1. 在 BoxJS 添加 `https://raw.githubusercontent.com/yourswoo/surge-module/refs/heads/gasbill/towngas.boxjs.json`。
 2. 在 Surge 安装 `https://raw.githubusercontent.com/yourswoo/surge-module/refs/heads/gasbill/towngas.sgmodule`，确认 MITM 主机名包含 `weixin.towngasvcc.com`，并已信任 Surge 证书。
-3. 保持 Surge 开启，在微信港华燃气页面中进入“充值购气”，抓取 `preCheck` 和 `gasStepFee`。
-4. 再进入“历史账单”，抓取 `queryHistoryFee`。收到“余额、阶梯和历史账单配置已齐全”通知后，可在 BoxJS 中检查配置。
+3. 保持 Surge 开启并进入微信港华燃气页面，`getLoginUserInfo` 会自动更新主业务 Bearer、Cookie、UA 和 Referer。
+4. 进入一次“充值购气”，让模块从 `preCheck / gasStepFee` 补齐 `subsId` 与 `orgId`。收到“Bearer、户号 ID 和燃气公司 ID 已齐全”通知后，可在 BoxJS 中检查配置；无需再进入历史账单页抓取 URL。
 5. 下载并导入 `https://raw.githubusercontent.com/yourswoo/surge-module/refs/heads/gasbill/towngas-widget.scripting`，打开脚本后先点“测试读取配置”，再点“立即查询燃气账户”。
 6. 查询成功后，从 iOS 桌面添加 Scripting 小组件并选择“港华燃气”。
 
@@ -28,11 +28,11 @@
 
 ## 数据与安全
 
-- GitHub 仓库只保存 BoxJS 键名和空默认值，不包含 Bearer、Cookie、户号、签名 URL、姓名、地址或抓包响应。
-- Bearer、Cookie、UA、Referer、`subsId`、`orgId` 和三个已签名 URL 均由 Surge 在用户设备上写入 BoxJS。
-- Scripting 每次运行时从 BoxJS 读取凭证，查询结果缓存不包含 Bearer、Cookie 或签名 URL。
-- 接口 URL 在发送前会校验为 `https://weixin.towngasvcc.com/nv1/vcc-cbs/charge/*`，防止将授权头发送到其他域名。
-- 已签名 URL 可能过期。如出现签名或授权失效，重新打开上述两个微信页面即可刷新 BoxJS。
+- GitHub 仓库只保存 BoxJS 键名和空默认值，不包含 Bearer、Cookie、户号、姓名、地址或抓包响应。
+- Bearer、Cookie、UA、Referer、`subsId` 和 `orgId` 仅由 Surge 在用户设备上写入 BoxJS。
+- `timestamp` 与 `sign` 每次查询实时生成，完整查询 URL 不写入 BoxJS；旧版本遗留的三个 URL 键不再读取，也不会被代码上传。
+- Scripting 查询目标由代码固定为 `https://weixin.towngasvcc.com/nv1/vcc-cbs/charge/*`，授权头不会发送到其他域名。
+- 保险接口使用另一套 Authorization，抓取规则明确排除 `interInsure`，不会覆盖燃气主业务 Bearer。
 
 ## 小组件行为
 
@@ -44,7 +44,7 @@
 ## 第一版限制
 
 - 当前为单户版。
-- 依赖 Surge 抓取官方 H5 生成的完整 `timestamp + sign` URL，未在脚本中复制或猜测服务端签名算法。
+- Bearer 失效后仍需要打开一次微信港华燃气页面触发官方 OAuth；模块会从首个主业务请求自动更新，无需手工复制。
 - 只调用三个 GET 查询接口，不执行充值、缴费或账户修改。
 
 ## 重新打包

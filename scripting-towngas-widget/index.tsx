@@ -38,7 +38,7 @@ function SettingsView() {
     setMessage("正在读取 BoxJS…")
     try {
       const config = await readRuntimeConfig(boxJsUrl)
-      setMessage(`读取成功：${config.label}；Bearer 和三个签名接口已齐全`)
+      setMessage(`读取成功：${config.label}；Bearer 和账户 ID 已齐全，签名将实时生成`)
     } catch (error) {
       setMessage(String((error as any)?.message ?? error))
     }
@@ -68,7 +68,7 @@ function SettingsView() {
       setMessage("查询成功；凭证仅在本轮运行中从 BoxJS 读取")
     } catch (error) {
       setOutput(`查询失败：${String((error as any)?.message ?? error)}`)
-      setMessage("请在 Surge 启用模块后，重新打开充值购气和历史账单页")
+      setMessage("请在 Surge 启用模块后打开港华页面，并进入一次充值购气页")
     } finally {
       setQuerying(false)
     }
@@ -79,7 +79,7 @@ function SettingsView() {
       <Form navigationTitle="港华燃气">
         <Section
           header={<Text>BoxJS 实时配置</Text>}
-          footer={<Text>Bearer、Cookie、户号和签名 URL 由 Surge 抓取并保存在 BoxJS，不会写入 Scripting 本地设置或 GitHub。</Text>}
+          footer={<Text>Bearer、Cookie 和账户 ID 由 Surge 抓取并保存在 BoxJS；timestamp 与 sign 每次查询实时生成，不会写入 GitHub。</Text>}
         >
           <TextField title="BoxJS 地址" value={boxJsUrl} onChanged={setBoxJsUrl} prompt="https://boxjs.com" />
           <Button title="测试读取配置" systemImage="arrow.triangle.2.circlepath" action={testBoxJs} />
