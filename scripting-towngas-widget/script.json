@@ -3,7 +3,7 @@
   "icon": "flame.fill",
   "iconImage": "https://raw.githubusercontent.com/yourswoo/surge-module/refs/heads/gasbill/towngas.png",
   "color": "#FF7A00",
-  "version": "1.1.1",
+  "version": "1.1.2",
   "description": "Towngas balance, bill, meter reading, and tier quota widget. Runtime credentials are read from BoxJS.",
   "localizedNames": {
     "zh": "港华燃气",

@@ -133,17 +133,22 @@ function Header({ data, compact = false }: { data: DisplayData; compact?: boolea
   )
 }
 
-function BalanceCard({ data, compact = false }: { data: DisplayData; compact?: boolean }) {
+function BalanceCard({ data, compact = false, amountFontSize }: { data: DisplayData; compact?: boolean; amountFontSize?: number }) {
   const result = data.result as GasResult
   const color = balanceColor(result, data.lowBalanceThreshold, data.criticalBalanceThreshold)
   return (
-    <VStack alignment="leading" spacing={compact ? 2 : 3} frame={{ maxWidth: "infinity" }} modifiers={modifiers().padding(compact ? 8 : 10).background({ style: COLORS.card, shape: { type: "rect", cornerRadius: 14 } } as any)}>
-      <HStack frame={{ maxWidth: "infinity" }}>
-        <Text modifiers={modifiers().font(8).foregroundStyle(COLORS.muted) as any}>账户余额</Text>
-        <Spacer />
-        <Text modifiers={modifiers().font(8).foregroundStyle(color as any) as any}>{balanceStatus(result, data.lowBalanceThreshold, data.criticalBalanceThreshold)}</Text>
+    <VStack alignment="leading" spacing={compact ? 3 : 4} frame={{ maxWidth: "infinity" }} modifiers={modifiers().padding(compact ? 8 : 10).background({ style: COLORS.card, shape: { type: "rect", cornerRadius: 14 } } as any)}>
+      <HStack alignment="top" spacing={compact ? 7 : 9} frame={{ maxWidth: "infinity" }}>
+        <VStack modifiers={modifiers().frame({ width: compact ? 3 : 4, height: 28 }).background({ style: color as any, shape: { type: "rect", cornerRadius: 999 } } as any)} />
+        <VStack alignment="leading" spacing={compact ? 2 : 3} frame={{ maxWidth: "infinity" }}>
+          <HStack frame={{ maxWidth: "infinity" }}>
+            <Text modifiers={modifiers().font(8).foregroundStyle(COLORS.muted) as any}>账户余额</Text>
+            <Spacer />
+            <Text modifiers={modifiers().font(8).foregroundStyle(color as any) as any}>{balanceStatus(result, data.lowBalanceThreshold, data.criticalBalanceThreshold)}</Text>
+          </HStack>
+          <Text lineLimit={1} modifiers={modifiers().font(amountFontSize ?? (compact ? 23 : 27)).fontWeight("bold").foregroundStyle(color as any) as any}>¥{formatMoney(result.account.balance)}</Text>
+        </VStack>
       </HStack>
-      <Text lineLimit={1} modifiers={modifiers().font(compact ? 23 : 27).fontWeight("bold").foregroundStyle(color as any) as any}>¥{formatMoney(result.account.balance)}</Text>
       <Text lineLimit={1} modifiers={modifiers().font(8).foregroundStyle(COLORS.muted) as any}>
         表数 {formatUsage(result.account.currentReading)} · 未出账 {formatUsage(result.unbilledUsage)} 方
       </Text>
@@ -183,7 +188,7 @@ function TierCard({ result, compact = false }: { result: GasResult; compact?: bo
   )
 }
 
-function BillCard({ bill, compact = false }: { bill: GasBill | null; compact?: boolean }) {
+function BillCard({ bill, compact = false, amountFontSize }: { bill: GasBill | null; compact?: boolean; amountFontSize?: number }) {
   return (
     <VStack alignment="leading" spacing={compact ? 2 : 3} frame={{ maxWidth: "infinity" }} modifiers={modifiers().padding(compact ? 8 : 9).background({ style: COLORS.card, shape: { type: "rect", cornerRadius: 12 } } as any)}>
       <HStack frame={{ maxWidth: "infinity" }}>
@@ -191,7 +196,7 @@ function BillCard({ bill, compact = false }: { bill: GasBill | null; compact?: b
         <Spacer />
         <Text modifiers={modifiers().font(8).foregroundStyle((bill?.unpaid ? COLORS.warning : COLORS.good) as any) as any}>{bill?.state || "暂无"}</Text>
       </HStack>
-      <Text lineLimit={1} modifiers={modifiers().font(compact ? 19 : 22).fontWeight("bold").foregroundStyle(COLORS.text) as any}>
+      <Text lineLimit={1} modifiers={modifiers().font(amountFontSize ?? (compact ? 19 : 22)).fontWeight("bold").foregroundStyle(COLORS.text) as any}>
         {bill ? `¥${formatMoney(bill.amount)}` : "¥ --"}
       </Text>
       <Text lineLimit={1} modifiers={modifiers().font(7).foregroundStyle(COLORS.muted) as any}>
@@ -271,8 +276,8 @@ function MediumWidget({ data }: { data: DisplayData }) {
       <VStack alignment="leading" spacing={7} frame={{ maxWidth: "infinity", maxHeight: "infinity", alignment: "topLeading" }} modifiers={modifiers().padding({ leading: 11, trailing: 11, top: 9, bottom: 9 })}>
         <Header data={data} />
         <HStack alignment="top" spacing={8} frame={{ maxWidth: "infinity" }}>
-          <BalanceCard data={data} compact />
-          <BillCard bill={result.bills[0] || null} compact />
+          <BalanceCard data={data} compact amountFontSize={17} />
+          <BillCard bill={result.bills[0] || null} compact amountFontSize={17} />
         </HStack>
         <MediumTierCard result={result} />
       </VStack>
