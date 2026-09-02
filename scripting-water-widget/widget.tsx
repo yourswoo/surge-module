@@ -126,27 +126,32 @@ function BalanceBlock({ result, compact = false }: { result: WaterResult; compac
   )
 }
 
-function LatestBillCard({ bill }: { bill: BillInfo | null }) {
+function LatestBillCard({ bill, compact = false }: { bill: BillInfo | null; compact?: boolean }) {
   return (
     <VStack
       alignment="leading"
-      spacing={4}
+      spacing={compact ? 3 : 4}
       frame={{ maxWidth: "infinity" }}
       modifiers={modifiers()
-        .padding({ leading: 8, trailing: 8, top: 7, bottom: 7 })
+        .padding({
+          leading: compact ? 7 : 8,
+          trailing: compact ? 7 : 8,
+          top: compact ? 5 : 7,
+          bottom: compact ? 5 : 7,
+        })
         .background({ style: COLORS.cardSoft, shape: { type: "rect", cornerRadius: 12 } } as any)}
     >
       <HStack spacing={4} frame={{ maxWidth: "infinity" }}>
-        <Text modifiers={modifiers().font(8).foregroundStyle(COLORS.muted) as any}>最近账单</Text>
+        <Text modifiers={modifiers().font(compact ? 7 : 8).foregroundStyle(COLORS.muted) as any}>最近账单</Text>
         <Spacer />
-        <Text modifiers={modifiers().font(8).foregroundStyle(bill ? paidColor(bill) as any : COLORS.muted) as any}>
+        <Text modifiers={modifiers().font(compact ? 7 : 8).foregroundStyle(bill ? paidColor(bill) as any : COLORS.muted) as any}>
           {bill?.status || "暂无"}
         </Text>
       </HStack>
-      <Text modifiers={modifiers().font(13).fontWeight("semibold").foregroundStyle(COLORS.text) as any}>
+      <Text lineLimit={1} modifiers={modifiers().font(compact ? 11 : 13).fontWeight("semibold").foregroundStyle(COLORS.text) as any}>
         {bill ? `${formatUsage(bill.usage)} 吨 · ¥${formatMoney(bill.amount)}` : "等待账单"}
       </Text>
-      <Text modifiers={modifiers().font(7).foregroundStyle(COLORS.muted) as any}>
+      <Text lineLimit={1} modifiers={modifiers().font(7).foregroundStyle(COLORS.muted) as any}>
         {bill ? `${bill.month} · 表数 ${formatUsage(bill.startReading)} → ${formatUsage(bill.endReading)}` : "历史账单接口未返回记录"}
       </Text>
     </VStack>
@@ -202,17 +207,14 @@ function SmallWidget({ data }: { data: DisplayData }) {
     <ZStack widgetBackground={COLORS.background} frame={{ maxWidth: "infinity", maxHeight: "infinity" }}>
       <VStack
         alignment="leading"
-        spacing={7}
+        spacing={6}
         frame={{ maxWidth: "infinity", maxHeight: "infinity", alignment: "topLeading" }}
-        modifiers={modifiers().padding({ leading: 10, trailing: 10, top: 9, bottom: 9 })}
+        modifiers={modifiers().padding({ leading: 10, trailing: 10, top: 8, bottom: 8 })}
       >
         <Header data={data} compact />
         <BalanceBlock result={result} compact />
         <Spacer />
-        <LatestBillCard bill={latest} />
-        <Text lineLimit={1} modifiers={modifiers().font(7).foregroundStyle(COLORS.muted) as any}>
-          {shortNumber(result.account.customerNo)} · {timeText(result.queriedAt)}
-        </Text>
+        <LatestBillCard bill={latest} compact />
       </VStack>
     </ZStack>
   )
@@ -360,4 +362,3 @@ async function main() {
 }
 
 main()
-
