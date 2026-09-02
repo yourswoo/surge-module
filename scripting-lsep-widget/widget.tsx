@@ -385,7 +385,6 @@ function MediumAccountCard({ result, lowThreshold, criticalThreshold }: { result
           </Text>
         </VStack>
         <Spacer />
-        <Text modifiers={modifiers().font(22).foregroundStyle(visual.color as any).opacity(0.38) as any}>⚡︎</Text>
       </HStack>
       <HStack alignment="top" spacing={7} frame={{ maxWidth: "infinity" }}>
         <VStack modifiers={modifiers()

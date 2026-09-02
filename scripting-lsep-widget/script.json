@@ -3,7 +3,7 @@
   "icon": "bolt.fill",
   "iconImage": "https://raw.githubusercontent.com/yourswoo/logo/refs/heads/main/lse.PNG",
   "color": "#30D158",
-  "version": "1.3.3",
+  "version": "1.3.4",
   "description": "LSEP electricity widget with adaptive themes, balance alerts, monthly usage, latest bill lookup, and runtime-only BoxJs configuration reading.",
   "localizedNames": {
     "zh": "乐电通电费",
