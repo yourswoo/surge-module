@@ -338,23 +338,28 @@ function MediumRow({ result, lowThreshold, criticalThreshold }: { result: Displa
         .padding({ leading: 11, trailing: 11, top: 7, bottom: 7 })
         .background({ style: visual.tint, shape: { type: "rect", cornerRadius: 14 } } as any)}
     >
-      <VStack
-        modifiers={modifiers()
-          .frame({ width: 4, height: 27 })
-          .background({ style: visual.color as any, shape: { type: "rect", cornerRadius: 999 } } as any)}
-      />
       <VStack alignment="leading" spacing={2}>
         <Text modifiers={modifiers().font(12).foregroundStyle(THEME.pageText).fontWeight("semibold") as any}>
           {result.account.label}
         </Text>
         <Text lineLimit={1} modifiers={modifiers().font(9).foregroundStyle(THEME.mutedText) as any}>
-          户号 {shortNumber(result.account.number)} · {visual.status}
+          户号 {shortNumber(result.account.number)}
         </Text>
       </VStack>
       <Spacer />
-      <Text modifiers={modifiers().font(16).foregroundStyle(visual.color as any).fontWeight("bold") as any}>
-        {visual.amount}
-      </Text>
+      <HStack alignment="center" spacing={7}>
+        <VStack
+          modifiers={modifiers()
+            .frame({ width: 4, height: 27 })
+            .background({ style: visual.color as any, shape: { type: "rect", cornerRadius: 999 } } as any)}
+        />
+        <VStack alignment="trailing" spacing={1}>
+          <Text lineLimit={1} modifiers={modifiers().font(7).foregroundStyle(visual.color as any) as any}>账户余额 · {visual.status}</Text>
+          <Text modifiers={modifiers().font(16).foregroundStyle(visual.color as any).fontWeight("bold") as any}>
+            {visual.amount}
+          </Text>
+        </VStack>
+      </HStack>
     </HStack>
   )
 }
@@ -371,9 +376,6 @@ function MediumAccountCard({ result, lowThreshold, criticalThreshold }: { result
         .background({ style: visual.tint, shape: { type: "rect", cornerRadius: 14 } } as any)}
     >
       <HStack alignment="center" spacing={6}>
-        <VStack modifiers={modifiers()
-          .frame({ width: 4, height: 28 })
-          .background({ style: visual.color as any, shape: { type: "rect", cornerRadius: 999 } } as any)} />
         <VStack alignment="leading" spacing={1}>
           <Text lineLimit={1} modifiers={modifiers().font(11).foregroundStyle(THEME.pageText).fontWeight("bold") as any}>
             {result.account.label}
@@ -385,12 +387,21 @@ function MediumAccountCard({ result, lowThreshold, criticalThreshold }: { result
         <Spacer />
         <Text modifiers={modifiers().font(22).foregroundStyle(visual.color as any).opacity(0.38) as any}>⚡︎</Text>
       </HStack>
-      <Text modifiers={modifiers().font(17).foregroundStyle(visual.color as any).fontWeight("bold") as any}>
-        {visual.amount}
-      </Text>
-      <Text lineLimit={1} modifiers={modifiers().font(7).foregroundStyle(THEME.mutedText) as any}>
-        {visual.status}
-      </Text>
+      <HStack alignment="top" spacing={7} frame={{ maxWidth: "infinity" }}>
+        <VStack modifiers={modifiers()
+          .frame({ width: 4, height: 28 })
+          .background({ style: visual.color as any, shape: { type: "rect", cornerRadius: 999 } } as any)} />
+        <VStack alignment="leading" spacing={2} frame={{ maxWidth: "infinity" }}>
+          <HStack frame={{ maxWidth: "infinity" }}>
+            <Text modifiers={modifiers().font(7).foregroundStyle(THEME.mutedText) as any}>账户余额</Text>
+            <Spacer />
+            <Text lineLimit={1} modifiers={modifiers().font(7).foregroundStyle(visual.color as any) as any}>{visual.status}</Text>
+          </HStack>
+          <Text modifiers={modifiers().font(17).foregroundStyle(visual.color as any).fontWeight("bold") as any}>
+            {visual.amount}
+          </Text>
+        </VStack>
+      </HStack>
       <HStack
         alignment="center"
         spacing={2}
