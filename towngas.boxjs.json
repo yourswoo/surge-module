@@ -2,6 +2,7 @@
   "id": "towngas.account",
   "name": "港华燃气",
   "author": "Yong",
+  "icon": "https://raw.githubusercontent.com/yourswoo/surge-module/refs/heads/gasbill/towngas.png",
   "apps": [
     {
       "id": "towngas_account",

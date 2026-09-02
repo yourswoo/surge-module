@@ -13,6 +13,8 @@ import { GasBill, GasResult, formatMoney, formatUsage, queryGas } from "./townga
 
 const SETTINGS_KEY = "towngas_widget_settings_v1"
 const CACHE_KEY = "towngas_widget_cache_v1"
+const LOGO_URL = "https://raw.githubusercontent.com/yourswoo/surge-module/refs/heads/gasbill/towngas.png"
+const FRESH_RESULT_WINDOW = 12 * 60 * 60 * 1000
 
 type LocalSettings = { boxJsUrl: string }
 type CacheData = { result: GasResult; label: string; title: string; savedAt: number }
@@ -53,6 +55,19 @@ function timeText(timestamp: number): string {
   return `${month}-${day} ${hour}:${minute}`
 }
 
+function formatChangedAt(timestamp: number, compact: boolean): string {
+  if (!timestamp) return compact ? "等待更新" : "等待首次数据更新"
+  return compact ? timeText(timestamp) : `上次更新 ${timeText(timestamp)}`
+}
+
+function dataFreshness(data: DisplayData): { fresh: boolean; changedAt: number } {
+  const changedAt = data.result?.queriedAt ?? 0
+  return {
+    fresh: data.source === "live" && !!changedAt && Date.now() - changedAt < FRESH_RESULT_WINDOW,
+    changedAt,
+  }
+}
+
 function monthText(value: string): string {
   const text = String(value || "")
   return text.length === 6 ? `${text.slice(0, 4)}-${text.slice(4)}` : text
@@ -72,13 +87,21 @@ function balanceStatus(result: GasResult, low: number, critical: number): string
   return "余额正常"
 }
 
-function Texture({ compact = false }: { compact?: boolean }) {
-  const counts = compact ? [3, 4, 3, 5, 6, 7, 8] : [8, 9, 8, 7, 6, 5, 4, 3]
+function Texture({ compact = false, medium = false }: { compact?: boolean; medium?: boolean }) {
+  const counts = compact
+    ? [3, 4, 3, 4, 5, 6, 7, 8, 9, 10]
+    : medium
+      ? [8, 9, 8, 7, 6, 5, 4, 3, 2]
+      : [10, 11, 10, 9, 8, 7, 6, 5, 4]
+  const offsets = compact
+    ? [0, 4, 1, 5, 2, 6, 3, 7, 4, 8]
+    : [0, 5, 1, 6, 2, 7, 3, 8, 4]
+  const gap = compact ? "   " : "    "
   return (
-    <VStack alignment="trailing" spacing={compact ? 7 : 8} frame={{ maxWidth: "infinity", maxHeight: "infinity", alignment: "topTrailing" }} modifiers={modifiers().opacity(0.12)}>
+    <VStack alignment="trailing" spacing={compact ? 6 : 8} frame={{ maxWidth: "infinity", maxHeight: "infinity", alignment: "topTrailing" }} modifiers={modifiers().padding({ leading: 5, trailing: 3, top: 2, bottom: 2 }).opacity(0.16)}>
       {counts.map((count, index) => (
-        <Text key={`texture-${index}`} modifiers={modifiers().padding({ trailing: index * 4 }).font(8).foregroundStyle(COLORS.texture) as any}>
-          {Array(count).fill("+").join("    ")}
+        <Text key={`texture-${index}-${count}`} modifiers={modifiers().padding({ trailing: offsets[index] }).font(8).foregroundStyle(COLORS.texture) as any}>
+          {Array(count).fill("+").join(gap)}
         </Text>
       ))}
     </VStack>
@@ -86,16 +109,27 @@ function Texture({ compact = false }: { compact?: boolean }) {
 }
 
 function Header({ data, compact = false }: { data: DisplayData; compact?: boolean }) {
+  const iconSize = compact ? 23 : 28
+  const freshness = dataFreshness(data)
   return (
-    <HStack alignment="center" spacing={7} frame={{ maxWidth: "infinity" }}>
-      <Image systemName="flame.fill" modifiers={modifiers().font(compact ? 13 : 15).foregroundStyle(COLORS.accent as any) as any} />
-      <VStack alignment="leading" spacing={0}>
-        <Text lineLimit={1} modifiers={modifiers().font(compact ? 10 : 12).fontWeight("bold").foregroundStyle(COLORS.text) as any}>{data.title}</Text>
-        <Text lineLimit={1} modifiers={modifiers().font(7).foregroundStyle(COLORS.muted) as any}>{data.label}</Text>
-      </VStack>
-      <Spacer />
-      {data.source !== "none" ? <Text modifiers={modifiers().font(9).foregroundStyle((data.source === "live" ? COLORS.good : COLORS.warning) as any) as any}>●</Text> : null}
-    </HStack>
+    <VStack alignment="leading" spacing={compact ? 4 : 6}>
+      <HStack alignment="center" spacing={8}>
+        <Image imageUrl={LOGO_URL} resizable scaleToFit frame={{ width: iconSize, height: iconSize }} />
+        <VStack alignment="leading" spacing={1}>
+          <Text modifiers={modifiers().font(compact ? 11 : 13).foregroundStyle(COLORS.text).fontWeight("bold") as any}>
+            港 华 燃 气
+          </Text>
+          {!compact ? <Text modifiers={modifiers().font(7).foregroundStyle(COLORS.muted) as any}>Towngas</Text> : null}
+        </VStack>
+        <Spacer />
+        <HStack alignment="center" spacing={4}>
+          <Text modifiers={modifiers().font(compact ? 9 : 10).foregroundStyle((freshness.fresh ? "#30D158" : "#FF9F0A") as any) as any}>●</Text>
+          <Text modifiers={modifiers().font(compact ? 7 : 8).foregroundStyle(COLORS.muted) as any}>
+            {freshness.fresh ? " " : formatChangedAt(freshness.changedAt, compact)}
+          </Text>
+        </HStack>
+      </HStack>
+    </VStack>
   )
 }
 
@@ -149,20 +183,42 @@ function TierCard({ result, compact = false }: { result: GasResult; compact?: bo
   )
 }
 
-function BillCard({ bill }: { bill: GasBill | null }) {
+function BillCard({ bill, compact = false }: { bill: GasBill | null; compact?: boolean }) {
   return (
-    <VStack alignment="leading" spacing={3} frame={{ maxWidth: "infinity" }} modifiers={modifiers().padding(8).background({ style: COLORS.card, shape: { type: "rect", cornerRadius: 12 } } as any)}>
+    <VStack alignment="leading" spacing={compact ? 2 : 3} frame={{ maxWidth: "infinity" }} modifiers={modifiers().padding(compact ? 8 : 9).background({ style: COLORS.card, shape: { type: "rect", cornerRadius: 12 } } as any)}>
       <HStack frame={{ maxWidth: "infinity" }}>
         <Text modifiers={modifiers().font(8).foregroundStyle(COLORS.muted) as any}>最近账单</Text>
         <Spacer />
         <Text modifiers={modifiers().font(8).foregroundStyle((bill?.unpaid ? COLORS.warning : COLORS.good) as any) as any}>{bill?.state || "暂无"}</Text>
       </HStack>
-      <Text lineLimit={1} modifiers={modifiers().font(12).fontWeight("semibold").foregroundStyle(COLORS.text) as any}>
-        {bill ? `${formatUsage(bill.usage)} 方 · ¥${formatMoney(bill.amount)}` : "等待账单"}
+      <Text lineLimit={1} modifiers={modifiers().font(compact ? 19 : 22).fontWeight("bold").foregroundStyle(COLORS.text) as any}>
+        {bill ? `¥${formatMoney(bill.amount)}` : "¥ --"}
       </Text>
       <Text lineLimit={1} modifiers={modifiers().font(7).foregroundStyle(COLORS.muted) as any}>
-        {bill ? `${monthText(bill.month)} · 表数 ${formatUsage(bill.previousReading)} → ${formatUsage(bill.currentReading)}` : "历史账单接口未返回记录"}
+        {bill ? `${monthText(bill.month)} · ${formatUsage(bill.usage)} 方 · ${bill.state}` : "历史账单暂无记录"}
       </Text>
+    </VStack>
+  )
+}
+
+function MediumTierCard({ result }: { result: GasResult }) {
+  const tier = result.tier
+  const quota = tier.quota === null ? "当前阶梯不限额" : `本阶梯 ${formatUsage(tier.usedInTier)} / ${formatUsage(tier.quota)} 方`
+  const remaining = tier.remaining === null ? "最高阶梯" : `距下一阶 ${formatUsage(tier.remaining)} 方`
+  return (
+    <VStack alignment="leading" spacing={4} frame={{ maxWidth: "infinity" }} modifiers={modifiers().padding({ leading: 9, trailing: 9, top: 7, bottom: 7 }).background({ style: COLORS.cardSoft, shape: { type: "rect", cornerRadius: 13 } } as any)}>
+      <HStack alignment="center" spacing={6} frame={{ maxWidth: "infinity" }}>
+        <Text modifiers={modifiers().font(10).fontWeight("bold").foregroundStyle(COLORS.text) as any}>{tier.name}</Text>
+        <Text modifiers={modifiers().font(9).fontWeight("semibold").foregroundStyle(COLORS.accent as any) as any}>¥{formatMoney(tier.price)}/方</Text>
+        <Spacer />
+        <Text modifiers={modifiers().font(8).foregroundStyle(COLORS.muted) as any}>年度 {formatUsage(result.annualUsage)} 方</Text>
+      </HStack>
+      <ProgressBar progress={tier.progress} width={288} />
+      <HStack frame={{ maxWidth: "infinity" }}>
+        <Text modifiers={modifiers().font(8).foregroundStyle(COLORS.muted) as any}>{quota}</Text>
+        <Spacer />
+        <Text modifiers={modifiers().font(8).foregroundStyle(COLORS.muted) as any}>{remaining} · {Math.round(tier.progress * 100)}%</Text>
+      </HStack>
     </VStack>
   )
 }
@@ -211,25 +267,14 @@ function MediumWidget({ data }: { data: DisplayData }) {
   const result = data.result as GasResult
   return (
     <ZStack widgetBackground={COLORS.background} frame={{ maxWidth: "infinity", maxHeight: "infinity" }}>
-      <Texture />
-      <VStack alignment="leading" spacing={8} frame={{ maxWidth: "infinity", maxHeight: "infinity", alignment: "topLeading" }} modifiers={modifiers().padding({ leading: 11, trailing: 11, top: 9, bottom: 9 })}>
+      <Texture medium />
+      <VStack alignment="leading" spacing={7} frame={{ maxWidth: "infinity", maxHeight: "infinity", alignment: "topLeading" }} modifiers={modifiers().padding({ leading: 11, trailing: 11, top: 9, bottom: 9 })}>
         <Header data={data} />
-        <HStack alignment="top" spacing={9} frame={{ maxWidth: "infinity", maxHeight: "infinity" }}>
-          <VStack alignment="leading" spacing={7} frame={{ maxWidth: "infinity" }}>
-            <BalanceCard data={data} />
-            <BillCard bill={result.bills[0] || null} />
-          </VStack>
-          <VStack alignment="leading" spacing={7} frame={{ maxWidth: "infinity" }}>
-            <TierCard result={result} />
-            <VStack alignment="leading" spacing={3} frame={{ maxWidth: "infinity" }} modifiers={modifiers().padding(8).background({ style: COLORS.card, shape: { type: "rect", cornerRadius: 12 } } as any)}>
-              <Text modifiers={modifiers().font(8).foregroundStyle(COLORS.muted) as any}>当前阶梯区间</Text>
-              <Text modifiers={modifiers().font(11).fontWeight("semibold").foregroundStyle(COLORS.text) as any}>
-                {result.tier.upper === null ? `${formatUsage(result.tier.lower)} 方以上` : `${formatUsage(result.tier.lower)} – ${formatUsage(result.tier.upper)} 方`}
-              </Text>
-              <Text modifiers={modifiers().font(7).foregroundStyle(COLORS.muted) as any}>更新 {timeText(result.queriedAt)}</Text>
-            </VStack>
-          </VStack>
+        <HStack alignment="top" spacing={8} frame={{ maxWidth: "infinity" }}>
+          <BalanceCard data={data} compact />
+          <BillCard bill={result.bills[0] || null} compact />
         </HStack>
+        <MediumTierCard result={result} />
       </VStack>
     </ZStack>
   )
@@ -244,9 +289,9 @@ function LargeWidget({ data }: { data: DisplayData }) {
         <Header data={data} />
         <HStack alignment="top" spacing={10} frame={{ maxWidth: "infinity" }}>
           <BalanceCard data={data} />
-          <TierCard result={result} />
+          <BillCard bill={result.bills[0] || null} />
         </HStack>
-        <BillCard bill={result.bills[0] || null} />
+        <TierCard result={result} />
         <Text modifiers={modifiers().font(9).fontWeight("semibold").foregroundStyle(COLORS.text) as any}>近期燃气账单</Text>
         <VStack alignment="leading" spacing={5}>
           {result.bills.slice(0, 6).map(bill => <BillRow key={bill.month} bill={bill} />)}
