@@ -43,6 +43,7 @@ async function readValue(baseUrl: string, key: string): Promise<string> {
 }
 
 function boundedNumber(value: string, fallback: number, min: number, max: number): number {
+  if (!value.trim()) return fallback
   const parsed = Number(value)
   return Number.isFinite(parsed) ? Math.max(min, Math.min(max, Math.round(parsed))) : fallback
 }
@@ -73,4 +74,3 @@ export async function readRuntimeConfig(baseUrl: string): Promise<RuntimeConfig>
     capturedAt: raw.capturedAt,
   }
 }
-

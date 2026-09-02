@@ -58,7 +58,7 @@ function SettingsView() {
         `账户余额：¥${formatMoney(result.account.balance)}`,
         `本期应收：¥${formatMoney(result.account.receivable)}`,
         latest ? `最近账单：${latest.month} · ${formatUsage(latest.usage)} 吨 · ¥${formatMoney(latest.amount)} · ${latest.status}` : "最近账单：暂无",
-        `共读取 ${result.bills.length} 条历史账单`,
+        `共读取 ${result.bills.length} 条历史账单（请求最近 ${config.months} 个月）`,
       ].join("\n"))
       setMessage("查询成功")
     } catch (error) {
@@ -99,4 +99,3 @@ async function run() {
 }
 
 run()
-
