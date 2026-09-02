@@ -7,6 +7,8 @@ export type RuntimeConfig = {
   title: string
   months: number
   refreshMinutes: number
+  lowBalanceThreshold: number
+  criticalBalanceThreshold: number
   capturedAt: string
 }
 
@@ -21,6 +23,8 @@ const KEYS = {
   title: "water_bill_title",
   months: "water_bill_months",
   refreshMinutes: "water_bill_refresh_minutes",
+  lowBalanceThreshold: "water_bill_balance_threshold",
+  criticalBalanceThreshold: "water_bill_balance_critical_threshold",
 } as const
 
 function normalizeBaseUrl(value: string): string {
@@ -48,6 +52,12 @@ function boundedNumber(value: string, fallback: number, min: number, max: number
   return Number.isFinite(parsed) ? Math.max(min, Math.min(max, Math.round(parsed))) : fallback
 }
 
+function thresholdNumber(value: string, fallback: number): number {
+  if (!value.trim()) return fallback
+  const parsed = Number(value)
+  return Number.isFinite(parsed) ? Math.max(0, parsed) : fallback
+}
+
 export async function readRuntimeConfig(baseUrl: string): Promise<RuntimeConfig> {
   const names = Object.keys(KEYS) as Array<keyof typeof KEYS>
   const values = await Promise.all(names.map(name => readValue(baseUrl, KEYS[name])))
@@ -59,6 +69,9 @@ export async function readRuntimeConfig(baseUrl: string): Promise<RuntimeConfig>
   if (!raw.customerId) missing.push(KEYS.customerId)
   if (missing.length) throw new Error(`BoxJS 配置缺失：${missing.join("、")}`)
 
+  const configuredLow = thresholdNumber(raw.lowBalanceThreshold, 100)
+  const configuredCritical = thresholdNumber(raw.criticalBalanceThreshold, 50)
+
   return {
     credentials: {
       appId: raw.appId,
@@ -67,10 +80,12 @@ export async function readRuntimeConfig(baseUrl: string): Promise<RuntimeConfig>
       cookie: raw.cookie,
       userAgent: raw.userAgent,
     },
-    label: raw.label || "我家水费",
-    title: raw.title || "水费",
+    label: !raw.label || raw.label === "我家水费" ? "四川濯缨科技" : raw.label,
+    title: !raw.title || raw.title === "水费" ? "水费查询" : raw.title,
     months: boundedNumber(raw.months, 6, 1, 24),
     refreshMinutes: boundedNumber(raw.refreshMinutes, 30, 0, 1440),
+    lowBalanceThreshold: Math.max(configuredLow, configuredCritical),
+    criticalBalanceThreshold: Math.min(configuredLow, configuredCritical),
     capturedAt: raw.capturedAt,
   }
 }
