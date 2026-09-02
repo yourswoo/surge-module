@@ -1,8 +1,8 @@
 #!name=港华燃气账户查询
-#!desc=自动抓取港华燃气查询配置；面板展示账户数据；默认每 85 分钟静默查询并续期 Cookie；定时 cron 仅负责推送账户通知。
+#!desc=自动抓取港华燃气查询配置；面板展示账户数据；默认每 80 分钟静默查询并续期 Cookie；定时 cron 仅负责推送账户通知。
 #!category=Utility
-#!arguments=panel_refresh:900,session_refresh:85,cronexp:0 9 * * *
-#!arguments-desc=panel_refresh: Surge 面板刷新间隔（秒），默认 900；填 -1 关闭面板自动刷新。\nsession_refresh: Cookie 静默续期间隔（分钟），默认 85；填 0 关闭。\ncronexp: 账户通知时间，默认每天 09:00；只有此任务会发送 Surge 通知，修改后需重新加载模块。
+#!arguments=panel_refresh:900,session_refresh:80,cronexp:0 9 * * *
+#!arguments-desc=panel_refresh: Surge 面板刷新间隔（秒），默认 900；填 -1 关闭面板自动刷新。\nsession_refresh: Cookie 静默续期间隔（分钟），默认 80；填 0 关闭。\ncronexp: 账户通知时间，默认每天 09:00；只有此任务会发送 Surge 通知，修改后需重新加载模块。
 
 [Rule]
 DOMAIN,weixin.towngasvcc.com,DIRECT
@@ -14,8 +14,8 @@ towngas-account-panel = script-name=towngas-account-panel, update-interval={{{pa
 # Surge 面板：读取 BoxJS 中已抓取的配置，实时查询余额、表数和阶梯用量。
 towngas-account-panel = type=generic, timeout=25, script-path=https://raw.githubusercontent.com/yourswoo/surge-module/refs/heads/gasbill/towngas.js, argument=mode=panel
 
-# 会话续期：调度器每 5 分钟检查一次，距上次实际查询满 session_refresh 分钟才请求；成功、失败均不通知。
-towngas-account-refresh = type=cron, cronexp="*/5 * * * *", timeout=30, wake-system=1, script-path=https://raw.githubusercontent.com/yourswoo/surge-module/refs/heads/gasbill/towngas.js, argument=mode=refresh&minutes={{{session_refresh}}}
+# 会话续期：调度器每 10 分钟检查一次，距上次实际查询满 session_refresh 分钟才请求；成功、失败均不通知。
+towngas-account-refresh = type=cron, cronexp="*/10 * * * *", timeout=30, wake-system=1, script-path=https://raw.githubusercontent.com/yourswoo/surge-module/refs/heads/gasbill/towngas.js, argument=mode=refresh&minutes={{{session_refresh}}}
 
 # 账户通知：默认每天 09:00 查询一次，并将余额、待缴、表数、阶梯和最近账单推送到 Surge。
 towngas-account-cron = type=cron, cronexp="{{{cronexp}}}", timeout=30, wake-system=1, script-path=https://raw.githubusercontent.com/yourswoo/surge-module/refs/heads/gasbill/towngas.js, argument=mode=cron

@@ -1,6 +1,6 @@
 /*
  * 港华燃气账户查询·Surge 抓取与面板
- * v1.1.0
+ * v1.1.1
  *
  * capture: 保存 preCheck / gasStepFee / queryHistoryFee 完整签名 URL、
  *          Authorization、Cookie、UA、Referer、subsId 和 orgId。
@@ -11,7 +11,7 @@
 
 'use strict';
 
-const VERSION = '1.1.0';
+const VERSION = '1.1.1';
 const SESSION_RUN_KEY = 'towngas_session_refresh_at';
 const KEYS = {
   authorization: 'towngas_authorization',
@@ -298,9 +298,9 @@ async function panel() {
   }
 }
 
-// cron 每 5 分钟唤醒一次；时间门控保证只有满指定间隔才真正访问接口。
+// cron 每 10 分钟唤醒一次；时间门控保证只有满指定间隔才真正访问接口。
 async function refresh() {
-  const minutes = Math.max(0, numberValue(ARGS.minutes || '85'));
+  const minutes = Math.max(0, numberValue(ARGS.minutes || '80'));
   if (!minutes) return finish({});
   const now = Date.now();
   const last = numberValue(read(SESSION_RUN_KEY));
