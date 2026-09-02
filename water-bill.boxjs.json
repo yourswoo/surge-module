@@ -1,12 +1,12 @@
 {
   "id": "water.bill",
-  "name": "夹江水费查询",
+  "name": "濯缨科技",
   "author": "Yong",
   "icon": "https://raw.githubusercontent.com/yourswoo/surge-module/refs/heads/waterbill/zhuoying.png",
   "apps": [
     {
       "id": "water_bill",
-      "name": "夹江水费查询",
+      "name": "濯缨科技",
       "keys": [
         "water_bill_appid",
         "water_bill_openid",
