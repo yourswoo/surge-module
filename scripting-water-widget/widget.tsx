@@ -13,6 +13,7 @@ import { BillInfo, WaterResult, formatMoney, formatUsage, queryWater } from "./w
 
 const SETTINGS_KEY = "water_widget_settings_v1"
 const CACHE_KEY = "water_widget_cache_v1"
+const BRAND_LOGO = "https://raw.githubusercontent.com/yourswoo/surge-module/refs/heads/waterbill/zhuoying.png"
 
 type LocalSettings = { boxJsUrl: string }
 type CacheData = {
@@ -100,14 +101,6 @@ function balanceVisual(result: WaterResult, lowThreshold: number, criticalThresh
   }
 }
 
-function displayTitle(value: string): string {
-  return !value || value === "水费" ? "水费查询" : value
-}
-
-function displayLabel(value: string): string {
-  return !value || value === "我家水费" ? "四川濯缨科技" : value
-}
-
 function PlusTexture({ compact = false }: { compact?: boolean }) {
   const counts = compact
     ? [3, 4, 3, 4, 5, 6, 7, 8]
@@ -138,31 +131,44 @@ function PlusTexture({ compact = false }: { compact?: boolean }) {
   )
 }
 
-function StatusDot({ source }: { source: DisplayData["source"] }) {
-  const live = source === "live"
+function StatusIndicator({ data, compact }: { data: DisplayData; compact: boolean }) {
+  const live = data.source === "live"
   return (
-    <Text modifiers={modifiers().font(Widget.family === "systemSmall" ? 9 : 10).foregroundStyle((live ? "#30D158" : "#FF9F0A") as any) as any}>●</Text>
+    <HStack alignment="center" spacing={4}>
+      <Text modifiers={modifiers().font(compact ? 9 : 10).foregroundStyle((live ? "#30D158" : "#FF9F0A") as any) as any}>●</Text>
+      <Text modifiers={modifiers().font(compact ? 7 : 8).foregroundStyle(COLORS.muted) as any}>
+        {live ? " " : data.result ? timeText(data.result.queriedAt) : " "}
+      </Text>
+    </HStack>
   )
 }
 
 function Header({ data, compact = false }: { data: DisplayData; compact?: boolean }) {
+  const iconSize = compact ? 23 : 28
   return (
-    <HStack alignment="center" spacing={6} frame={{ maxWidth: "infinity" }}>
-      <Image
-        systemName="drop.fill"
-        modifiers={modifiers().font(compact ? 12 : 14).foregroundStyle(COLORS.accent as any) as any}
-      />
-      <VStack alignment="leading" spacing={0}>
-        <Text lineLimit={1} modifiers={modifiers().font(compact ? 10 : 12).fontWeight("bold").foregroundStyle(COLORS.text) as any}>
-          {displayTitle(data.title)}
-        </Text>
-        <Text lineLimit={1} modifiers={modifiers().font(7).foregroundStyle(COLORS.muted) as any}>
-          {displayLabel(data.label)}
-        </Text>
-      </VStack>
-      <Spacer />
-      {data.source !== "none" ? <StatusDot source={data.source} /> : null}
-    </HStack>
+    <VStack alignment="leading" spacing={compact ? 4 : 6}>
+      <HStack alignment="center" spacing={8} frame={{ maxWidth: "infinity" }}>
+        <Image
+          imageUrl={BRAND_LOGO}
+          resizable
+          scaleToFit
+          frame={{ width: iconSize, height: iconSize }}
+        />
+        <VStack alignment="leading" spacing={1}>
+          <Text
+            lineLimit={1}
+            modifiers={modifiers().font(compact ? 11 : 13).foregroundStyle(COLORS.text).fontWeight("bold") as any}
+          >
+            濯 缨 科 技
+          </Text>
+          <Text lineLimit={1} modifiers={modifiers().font(compact ? 6 : 7).foregroundStyle(COLORS.muted) as any}>
+            Jiajiang  Waterworks
+          </Text>
+        </VStack>
+        <Spacer />
+        {data.source !== "none" ? <StatusIndicator data={data} compact={compact} /> : null}
+      </HStack>
+    </VStack>
   )
 }
 
@@ -388,7 +394,7 @@ function AccessoryWidget({ data }: { data: DisplayData }) {
   }
   return (
     <VStack alignment="leading" spacing={2}>
-      <Text font="caption">{displayLabel(data.label)}</Text>
+      <Text font="caption">濯缨科技</Text>
       <Text font="headline">余额 ¥{formatMoney(result.account.balance)}</Text>
       <Text font="caption">{result.bills[0] ? `${result.bills[0].month} · ${formatUsage(result.bills[0].usage)} 吨` : "暂无账单"}</Text>
     </VStack>
@@ -459,8 +465,8 @@ async function main() {
   Widget.present(
     <WaterWidget data={{
       result: null,
-      label: runtime?.label || "四川濯缨科技",
-      title: runtime?.title || "水费查询",
+      label: runtime?.label || "濯缨科技",
+      title: runtime?.title || "夹江水费查询",
       source: "none",
       lowBalanceThreshold: runtime?.lowBalanceThreshold ?? 100,
       criticalBalanceThreshold: runtime?.criticalBalanceThreshold ?? 50,

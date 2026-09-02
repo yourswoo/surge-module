@@ -71,7 +71,7 @@ function SettingsView() {
 
   return (
     <NavigationStack>
-      <Form navigationTitle="云润水费">
+      <Form navigationTitle="夹江水费查询">
         <Section
           header={<Text>BoxJS 实时配置</Text>}
           footer={<Text>身份参数、Cookie、账户标签、查询月数和刷新间隔均在小组件运行时从 BoxJS 读取，不复制到本地设置。</Text>}
