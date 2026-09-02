@@ -1,0 +1,21 @@
+#!name=港华燃气账户查询
+#!desc=在微信中打开充值购气和历史账单页，自动抓取已签名查询 URL、Bearer、Cookie、UA 和户号信息写入 BoxJS；Surge 面板展示余额、待缴、表数与阶梯用量。
+#!category=Utility
+#!arguments=panel_refresh:900
+#!arguments-desc=panel_refresh: Surge 面板刷新间隔（秒），默认 900；填 -1 关闭自动刷新。
+
+[Rule]
+DOMAIN,weixin.towngasvcc.com,DIRECT
+
+[Panel]
+towngas-account-panel = script-name=towngas-account-panel, update-interval={{{panel_refresh}}}
+
+[Script]
+# Surge 面板：读取 BoxJS 中已抓取的配置，实时查询余额、表数和阶梯用量。
+towngas-account-panel = type=generic, timeout=25, script-path=https://raw.githubusercontent.com/yourswoo/surge-module/refs/heads/gasbill/towngas.js, argument=mode=panel
+
+# 打开“充值购气”页抓取 preCheck / gasStepFee；打开“历史账单”页抓取 queryHistoryFee。
+towngas-account-capture = type=http-request, pattern=^https://weixin\.towngasvcc\.com/nv1/vcc-cbs/charge/(?:preCheck|gasStepFee|queryHistoryFee)(?:\?|$), requires-body=0, timeout=10, script-path=https://raw.githubusercontent.com/yourswoo/surge-module/refs/heads/gasbill/towngas.js, argument=mode=capture
+
+[MITM]
+hostname = %APPEND% weixin.towngasvcc.com

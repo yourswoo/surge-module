@@ -1,0 +1,19 @@
+{
+  "name": "港华燃气",
+  "icon": "flame.fill",
+  "color": "#FF7A00",
+  "version": "1.0.0",
+  "description": "Towngas balance, bill, meter reading, and tier quota widget. Runtime credentials are read from BoxJS.",
+  "localizedNames": {
+    "zh": "港华燃气",
+    "en": "Towngas"
+  },
+  "localizedDescriptions": {
+    "zh": "展示余额、待缴金额、表数、历史账单和阶梯气价额度；查询凭证仅在运行时从 BoxJS 读取。",
+    "en": "Balance, amount due, meter reading, bills, and gas tier quota with runtime-only BoxJS credentials."
+  },
+  "remoteResource": {
+    "url": "https://raw.githubusercontent.com/yourswoo/surge-module/refs/heads/gasbill/towngas-widget.scripting",
+    "autoUpdateInterval": 86400
+  }
+}
