@@ -10,4 +10,3 @@ water-bill-capture = type=http-request, pattern=^https?://wx\.chinayunrun\.com(?
 
 [MITM]
 hostname = %APPEND% wx.chinayunrun.com
-

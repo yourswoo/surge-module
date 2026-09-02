@@ -89,15 +89,23 @@ try {
     throw new Error('请求中缺少 appId、openId 或 customerId，请进入水费账单/缴费页面后重试');
   }
 
-  const previous = [read(KEYS.appId), read(KEYS.openId), read(KEYS.customerId), read(KEYS.cookie)].join('|');
+  const previousAppId = read(KEYS.appId);
+  const previousOpenId = read(KEYS.openId);
+  const previousCustomerId = read(KEYS.customerId);
+  const previousCookie = read(KEYS.cookie);
+  const previous = [previousAppId, previousOpenId, previousCustomerId, previousCookie].join('|');
+  const accountChanged = previousAppId !== appId || previousOpenId !== openId || previousCustomerId !== customerId;
   write(appId, KEYS.appId);
   write(openId, KEYS.openId);
   write(customerId, KEYS.customerId);
-  write(cookie, KEYS.cookie);
+  if (cookie) write(cookie, KEYS.cookie);
+  else if (accountChanged) {
+    try { $persistentStore.write('', KEYS.cookie); } catch (_) {}
+  }
   write(userAgent, KEYS.userAgent);
   write(new Date().toISOString(), KEYS.capturedAt);
 
-  const current = [appId, openId, customerId, cookie].join('|');
+  const current = [appId, openId, customerId, cookie || (accountChanged ? '' : previousCookie)].join('|');
   const notify = read(KEYS.captureNotify) !== '0';
   if (notify && previous !== current && typeof $notification !== 'undefined') {
     $notification.post(
@@ -116,4 +124,3 @@ try {
 } finally {
   finish();
 }
-
