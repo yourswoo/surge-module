@@ -82,14 +82,14 @@
         {
           "id": "lsep_balance_threshold",
           "name": "余额偏低阈值",
-          "val": "20",
+          "val": "100",
           "type": "text",
           "desc": "单位：元；低于此金额显示橙色"
         },
         {
           "id": "lsep_balance_critical_threshold",
           "name": "余额不足阈值",
-          "val": "10",
+          "val": "50",
           "type": "text",
           "desc": "单位：元；达到或低于此金额显示红色，并且不能高于余额偏低阈值"
         },

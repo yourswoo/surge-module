@@ -582,12 +582,12 @@ async function main() {
     title: runtime.title,
     labels: runtime.labels,
     lowBalanceThreshold: Math.max(
-      thresholdValue(runtime.lowBalanceThreshold, 20),
-      thresholdValue(runtime.criticalBalanceThreshold, 10),
+      thresholdValue(runtime.lowBalanceThreshold, 100),
+      thresholdValue(runtime.criticalBalanceThreshold, 50),
     ),
     criticalBalanceThreshold: Math.min(
-      thresholdValue(runtime.lowBalanceThreshold, 20),
-      thresholdValue(runtime.criticalBalanceThreshold, 10),
+      thresholdValue(runtime.lowBalanceThreshold, 100),
+      thresholdValue(runtime.criticalBalanceThreshold, 50),
     ),
     refreshMinutes: localSettings.refreshMinutes,
   }

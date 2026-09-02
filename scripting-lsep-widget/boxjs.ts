@@ -92,8 +92,8 @@ export async function readRuntimeConfigFromBoxJs(config: BoxJsConfig): Promise<B
     cookie,
     userAgent: raw.userAgent,
     title: raw.title || "电费余额",
-    lowBalanceThreshold: raw.lowBalanceThreshold || "20",
-    criticalBalanceThreshold: raw.criticalBalanceThreshold || "10",
+    lowBalanceThreshold: raw.lowBalanceThreshold || "100",
+    criticalBalanceThreshold: raw.criticalBalanceThreshold || "50",
     monthlyOpeningBalances: raw.monthlyOpeningBalances,
     monthlyOpeningMonth: raw.monthlyOpeningMonth,
   }

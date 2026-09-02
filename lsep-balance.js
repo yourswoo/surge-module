@@ -21,7 +21,7 @@
  *   number=户号1,户号2
  *   label=我家,父母家
  *   token / openid / wechaId：单值广播，多值按户对应
- *   threshold=20&title=电费余额&capnotify=1&debug=0
+ *   threshold=100&title=电费余额&capnotify=1&debug=0
  */
 
 'use strict';
@@ -35,7 +35,7 @@ const DEFAULTS = {
   openid: '',
   wechaId: '',
   label: '',
-  threshold: '20',
+  threshold: '100',
   title: '电费余额',
   capnotify: '1',
   autorefresh: '1',
