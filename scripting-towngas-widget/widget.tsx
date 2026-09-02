@@ -168,7 +168,7 @@ function TierCard({ result, compact = false }: { result: GasResult; compact?: bo
   return (
     <VStack alignment="leading" spacing={compact ? 4 : 6} frame={{ maxWidth: "infinity" }} modifiers={modifiers().padding(compact ? 8 : 10).background({ style: COLORS.cardSoft, shape: { type: "rect", cornerRadius: 14 } } as any)}>
       <HStack frame={{ maxWidth: "infinity" }}>
-        <Text modifiers={modifiers().font(compact ? 9 : 10).fontWeight("bold").foregroundStyle(COLORS.text) as any}>{tier.name}</Text>
+        <Text modifiers={modifiers().font(compact ? 9 : 10).fontWeight("bold").foregroundStyle(COLORS.text) as any}>当前气阶：{tier.name}</Text>
         <Spacer />
         <Text modifiers={modifiers().font(9).foregroundStyle(COLORS.accent as any) as any}>¥{formatMoney(tier.price)}/方</Text>
       </HStack>
@@ -208,7 +208,7 @@ function MediumTierCard({ result }: { result: GasResult }) {
   return (
     <VStack alignment="leading" spacing={4} frame={{ maxWidth: "infinity" }} modifiers={modifiers().padding({ leading: 9, trailing: 9, top: 7, bottom: 7 }).background({ style: COLORS.cardSoft, shape: { type: "rect", cornerRadius: 13 } } as any)}>
       <HStack alignment="center" spacing={6} frame={{ maxWidth: "infinity" }}>
-        <Text modifiers={modifiers().font(10).fontWeight("bold").foregroundStyle(COLORS.text) as any}>{tier.name}</Text>
+        <Text modifiers={modifiers().font(10).fontWeight("bold").foregroundStyle(COLORS.text) as any}>当前气阶：{tier.name}</Text>
         <Text modifiers={modifiers().font(9).fontWeight("semibold").foregroundStyle(COLORS.accent as any) as any}>¥{formatMoney(tier.price)}/方</Text>
         <Spacer />
         <Text modifiers={modifiers().font(8).foregroundStyle(COLORS.muted) as any}>年度 {formatUsage(result.annualUsage)} 方</Text>
