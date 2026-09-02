@@ -4,7 +4,7 @@
 
 ## 文件
 
-- `towngas.sgmodule`：Surge 模块，包含直连、面板、请求抓取和 MITM 规则。
+- `towngas.sgmodule`：Surge 模块，包含直连、面板、静默会话续期、定时通知、请求抓取和 MITM 规则。
 - `towngas.js`：Surge 抓取/面板脚本。
 - `towngas.boxjs.json`：BoxJS 订阅配置，所有敏感默认值均为空。
 - `towngas-widget.scripting`：可直接导入 Scripting App 的小组件包。
@@ -18,6 +18,13 @@
 4. 再进入“历史账单”，抓取 `queryHistoryFee`。收到“余额、阶梯和历史账单配置已齐全”通知后，可在 BoxJS 中检查配置。
 5. 下载并导入 `https://raw.githubusercontent.com/yourswoo/surge-module/refs/heads/gasbill/towngas-widget.scripting`，打开脚本后先点“测试读取配置”，再点“立即查询燃气账户”。
 6. 查询成功后，从 iOS 桌面添加 Scripting 小组件并选择“港华燃气”。
+
+## Surge 后台任务
+
+- `session_refresh` 默认值为 `85`，表示每满 85 分钟静默查询一次账户接口，并将响应中的新 Cookie 合并写回 BoxJS；填写 `0` 可关闭。
+- 因五段 cron 不能准确表达连续的 85 分钟间隔，Surge 每 5 分钟唤醒一次轻量检查，未满 85 分钟不会发起网络请求。
+- `cronexp` 默认每天 `09:00`，用于查询账户并推送一次 Surge 通知；会话续期无论成功或失败都不会发送通知。
+- 修改模块参数后，需要在 Surge 中重新加载模块。
 
 ## 数据与安全
 

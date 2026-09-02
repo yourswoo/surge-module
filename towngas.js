@@ -1,15 +1,18 @@
 /*
  * 港华燃气账户查询·Surge 抓取与面板
- * v1.0.0
+ * v1.1.0
  *
  * capture: 保存 preCheck / gasStepFee / queryHistoryFee 完整签名 URL、
  *          Authorization、Cookie、UA、Referer、subsId 和 orgId。
  * panel:   读取 BoxJS 共享键，查询账户余额、表数、阶梯和最近账单。
+ * refresh: 每隔指定分钟静默查询，并把响应中的新 Cookie 合并回 BoxJS。
+ * cron:    查询账户数据并推送 Surge 通知。
  */
 
 'use strict';
 
-const VERSION = '1.0.0';
+const VERSION = '1.1.0';
+const SESSION_RUN_KEY = 'towngas_session_refresh_at';
 const KEYS = {
   authorization: 'towngas_authorization',
   cookie: 'towngas_cookie',
@@ -21,6 +24,9 @@ const KEYS = {
   stepUrl: 'towngas_step_url',
   historyUrl: 'towngas_history_url',
   label: 'towngas_label',
+  title: 'towngas_title',
+  balanceThreshold: 'towngas_balance_threshold',
+  criticalThreshold: 'towngas_balance_critical_threshold',
   capturedAt: 'towngas_captured_at',
   captureNotify: 'towngas_capnotify',
   debug: 'towngas_debug',
@@ -60,6 +66,35 @@ function header(headers, name) {
     if (keys[i].toLowerCase() === target) return String(headers[keys[i]] || '');
   }
   return '';
+}
+
+function cookieMap(value) {
+  const out = {};
+  String(value || '').split(';').forEach(part => {
+    const index = part.indexOf('=');
+    if (index <= 0) return;
+    const name = part.slice(0, index).trim();
+    if (name) out[name] = part.slice(index + 1).trim();
+  });
+  return out;
+}
+
+// Surge 可能将多个 Set-Cookie 返回为数组，也可能合并为一个字符串。
+function mergeResponseCookies(headers) {
+  const fresh = {};
+  Object.keys(headers || {}).forEach(key => {
+    if (String(key).toLowerCase() !== 'set-cookie') return;
+    const values = Array.isArray(headers[key]) ? headers[key] : [headers[key]];
+    values.forEach(value => {
+      const text = String(value || '');
+      const pattern = /(?:^|,\s*)([^=;,\s]+)=([^;,]*)/g;
+      let match;
+      while ((match = pattern.exec(text))) fresh[match[1]] = match[2].trim();
+    });
+  });
+  if (!Object.keys(fresh).length) return false;
+  const merged = Object.assign({}, cookieMap(read(KEYS.cookie)), fresh);
+  return write(Object.keys(merged).map(name => name + '=' + merged[name]).join('; '), KEYS.cookie);
 }
 
 function queryParams(url) {
@@ -162,6 +197,7 @@ function requestJson(url, label) {
     if (referer) headers.Referer = referer;
     $httpClient.get({ url: url, headers: headers, timeout: 15 }, (error, response, body) => {
       if (error) return reject(new Error(label + '查询失败: ' + error));
+      mergeResponseCookies((response && response.headers) || {});
       const status = Number(response && (response.status || response.statusCode)) || 0;
       if (status < 200 || status >= 300) return reject(new Error(label + ' HTTP ' + status));
       let payload;
@@ -207,32 +243,48 @@ function latestGasBill(history) {
 
 function money(value) { return numberValue(value).toFixed(2); }
 
+async function queryAccount() {
+  if (!read(KEYS.authorization)) throw new Error('请先在微信中打开燃气页面抓取配置');
+  const results = await Promise.all([
+    requestJson(read(KEYS.precheckUrl), '账户概览'),
+    requestJson(read(KEYS.stepUrl), '阶梯气价'),
+    read(KEYS.historyUrl) ? requestJson(read(KEYS.historyUrl), '历史账单').catch(() => []) : Promise.resolve([]),
+  ]);
+  const account = results[0] || {};
+  const step = results[1] || {};
+  const bill = latestGasBill(results[2]);
+  const reading = Array.isArray(account.readingRptList) && account.readingRptList[0] ? account.readingRptList[0].currReading : '--';
+  const amount = numberValue(step.buyamount);
+  return {
+    account: account,
+    bill: bill,
+    reading: reading,
+    amount: amount,
+    tier: currentTier(amount, step.stepList),
+    label: read(KEYS.label) || '燃气账户',
+  };
+}
+
+function tierText(data) {
+  return data.tier.remaining === null
+    ? data.tier.name + ' · ¥' + money(data.tier.price) + '/方'
+    : data.tier.name + ' · ¥' + money(data.tier.price) + '/方 · 距下一阶 ' + data.tier.remaining + ' 方';
+}
+
+function billText(bill) {
+  return bill
+    ? String(bill.yrMonth || '').slice(0, 4) + '-' + String(bill.yrMonth || '').slice(4) + '  ' + bill.amount + '方  ¥' + money(bill.chrgSum)
+    : '暂无历史账单';
+}
+
 async function panel() {
   try {
-    if (!read(KEYS.authorization)) throw new Error('请先在微信中打开燃气页面抓取配置');
-    const results = await Promise.all([
-      requestJson(read(KEYS.precheckUrl), '账户概览'),
-      requestJson(read(KEYS.stepUrl), '阶梯气价'),
-      read(KEYS.historyUrl) ? requestJson(read(KEYS.historyUrl), '历史账单').catch(() => []) : Promise.resolve([]),
-    ]);
-    const account = results[0] || {};
-    const step = results[1] || {};
-    const bill = latestGasBill(results[2]);
-    const reading = Array.isArray(account.readingRptList) && account.readingRptList[0] ? account.readingRptList[0].currReading : '--';
-    const amount = numberValue(step.buyamount);
-    const tier = currentTier(amount, step.stepList);
-    const label = read(KEYS.label) || '燃气账户';
-    const tierLine = tier.remaining === null
-      ? tier.name + ' · ¥' + money(tier.price) + '/方'
-      : tier.name + ' · 距下一阶 ' + tier.remaining + ' 方';
-    const billLine = bill
-      ? String(bill.yrMonth || '').slice(0, 4) + '-' + String(bill.yrMonth || '').slice(4) + '  ' + bill.amount + '方  ¥' + money(bill.chrgSum)
-      : '未抓取历史账单';
+    const data = await queryAccount();
     finish({
-      title: label,
-      content: '余额 ¥' + money(account.savingSum) + '  ·  待缴 ¥' + money(account.totalFee) + '\n' +
-        '当前表数 ' + reading + '  ·  年度累计 ' + amount + ' 方\n' +
-        tierLine + '\n最近账单 ' + billLine,
+      title: data.label,
+      content: '余额 ¥' + money(data.account.savingSum) + '  ·  待缴 ¥' + money(data.account.totalFee) + '\n' +
+        '当前表数 ' + data.reading + '  ·  年度累计 ' + data.amount + ' 方\n' +
+        tierText(data) + '\n最近账单 ' + billText(data.bill),
       icon: 'flame.fill',
       'icon-color': '#FF7A00',
     });
@@ -246,5 +298,47 @@ async function panel() {
   }
 }
 
-if (MODE === 'capture') capture();
-else panel();
+// cron 每 5 分钟唤醒一次；时间门控保证只有满指定间隔才真正访问接口。
+async function refresh() {
+  const minutes = Math.max(0, numberValue(ARGS.minutes || '85'));
+  if (!minutes) return finish({});
+  const now = Date.now();
+  const last = numberValue(read(SESSION_RUN_KEY));
+  if (last && now - last < minutes * 60000) return finish({});
+  write(String(now), SESSION_RUN_KEY);
+  try {
+    await queryAccount();
+    if (read(KEYS.debug) === '1') console.log('[towngas ' + VERSION + '] 静默续期完成');
+  } catch (error) {
+    if (read(KEYS.debug) === '1') console.log('[towngas ' + VERSION + '] 静默续期失败: ' + String((error && error.message) || error));
+  }
+  finish({});
+}
+
+async function cron() {
+  try {
+    const data = await queryAccount();
+    const balance = numberValue(data.account.savingSum);
+    const due = numberValue(data.account.totalFee);
+    const low = numberValue(read(KEYS.balanceThreshold) || '100');
+    const critical = numberValue(read(KEYS.criticalThreshold) || '50');
+    const mark = due > 0 || balance <= critical ? '❗️' : (low > 0 && balance < low ? '⚠️' : '🔥');
+    const title = mark + ' ' + (read(KEYS.title) || '港华燃气') + '：余额 ¥' + money(balance);
+    const subtitle = due > 0 ? '待缴 ¥' + money(due) : data.label;
+    const body = '当前表数 ' + data.reading + ' · 年度累计 ' + data.amount + ' 方\n' +
+      tierText(data) + '\n最近账单 ' + billText(data.bill);
+    if (typeof $notification !== 'undefined') $notification.post(title, subtitle, body);
+  } catch (error) {
+    if (typeof $notification !== 'undefined') {
+      $notification.post((read(KEYS.title) || '港华燃气') + '：查询失败', '', '[' + VERSION + '] ' + String((error && error.message) || error));
+    }
+  }
+  finish({});
+}
+
+(async function main() {
+  if (MODE === 'capture') return capture();
+  if (MODE === 'refresh') return await refresh();
+  if (MODE === 'cron') return await cron();
+  return await panel();
+})();
