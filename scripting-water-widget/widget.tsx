@@ -177,18 +177,20 @@ function BalanceBlock({
   lowThreshold,
   criticalThreshold,
   compact = false,
+  medium = false,
 }: {
   result: WaterResult
   lowThreshold: number
   criticalThreshold: number
   compact?: boolean
+  medium?: boolean
 }) {
   const due = result.account.receivable
   const visual = balanceVisual(result, lowThreshold, criticalThreshold)
   return (
-    <HStack
-      alignment="center"
-      spacing={compact ? 6 : 8}
+    <VStack
+      alignment="leading"
+      spacing={medium ? 2 : 0}
       frame={{ maxWidth: "infinity" }}
       modifiers={modifiers()
         .padding({
@@ -199,30 +201,39 @@ function BalanceBlock({
         })
         .background({ style: visual.tint, shape: { type: "rect", cornerRadius: compact ? 12 : 14 } } as any)}
     >
-      <VStack
-        modifiers={modifiers()
-          .frame({ width: compact ? 3 : 4, height: compact ? 43 : 52 })
-          .background({ style: visual.color as any, shape: { type: "rect", cornerRadius: 999 } } as any)}
-      />
-      <VStack alignment="leading" spacing={compact ? 1 : 2} frame={{ maxWidth: "infinity" }}>
-        <HStack alignment="center" spacing={4} frame={{ maxWidth: "infinity" }}>
-          <Text modifiers={modifiers().font(compact ? 7 : 8).foregroundStyle(COLORS.muted) as any}>账户余额</Text>
-          <Spacer />
-          <Text lineLimit={1} modifiers={modifiers().font(compact ? 7 : 8).foregroundStyle(visual.color as any) as any}>
-            {visual.status}
+      <HStack alignment={medium ? "top" : "center"} spacing={compact ? 6 : 8} frame={{ maxWidth: "infinity" }}>
+        <VStack
+          modifiers={modifiers()
+            .frame({ width: compact ? 3 : 4, height: compact ? 43 : medium ? 28 : 52 })
+            .background({ style: visual.color as any, shape: { type: "rect", cornerRadius: 999 } } as any)}
+        />
+        <VStack alignment="leading" spacing={compact ? 1 : 2} frame={{ maxWidth: "infinity" }}>
+          <HStack alignment="center" spacing={4} frame={{ maxWidth: "infinity" }}>
+            <Text modifiers={modifiers().font(compact ? 7 : 8).foregroundStyle(COLORS.muted) as any}>账户余额</Text>
+            <Spacer />
+            <Text lineLimit={1} modifiers={modifiers().font(compact ? 7 : 8).foregroundStyle(visual.color as any) as any}>
+              {visual.status}
+            </Text>
+          </HStack>
+          <Text
+            lineLimit={1}
+            modifiers={modifiers().font(compact ? 19 : medium ? 17 : 26).fontWeight("bold").foregroundStyle(visual.color as any) as any}
+          >
+            ¥{formatMoney(result.account.balance)}
           </Text>
-        </HStack>
-        <Text
-          lineLimit={1}
-          modifiers={modifiers().font(compact ? 19 : 26).fontWeight("bold").foregroundStyle(visual.color as any) as any}
-        >
-          ¥{formatMoney(result.account.balance)}
-        </Text>
-        <Text lineLimit={1} modifiers={modifiers().font(compact ? 7 : 8).foregroundStyle(due > 0 ? COLORS.warning as any : COLORS.muted) as any}>
+          {!medium ? (
+            <Text lineLimit={1} modifiers={modifiers().font(compact ? 7 : 8).foregroundStyle(due > 0 ? COLORS.warning as any : COLORS.muted) as any}>
+              {due > 0 ? `本期应收 ¥${formatMoney(due)}` : "本期暂无应收"}
+            </Text>
+          ) : null}
+        </VStack>
+      </HStack>
+      {medium ? (
+        <Text lineLimit={1} modifiers={modifiers().font(8).foregroundStyle(due > 0 ? COLORS.warning as any : COLORS.muted) as any}>
           {due > 0 ? `本期应收 ¥${formatMoney(due)}` : "本期暂无应收"}
         </Text>
-      </VStack>
-    </HStack>
+      ) : null}
+    </VStack>
   )
 }
 
@@ -336,7 +347,7 @@ function MediumWidget({ data }: { data: DisplayData }) {
         <Header data={data} />
         <HStack alignment="top" spacing={9} frame={{ maxWidth: "infinity", maxHeight: "infinity" }}>
           <VStack alignment="leading" spacing={8} frame={{ maxWidth: "infinity" }}>
-            <BalanceBlock result={result} lowThreshold={data.lowBalanceThreshold} criticalThreshold={data.criticalBalanceThreshold} />
+            <BalanceBlock result={result} lowThreshold={data.lowBalanceThreshold} criticalThreshold={data.criticalBalanceThreshold} medium />
             <LatestBillCard bill={result.bills[0] || null} />
           </VStack>
           <VStack alignment="leading" spacing={5} frame={{ maxWidth: "infinity" }}>
