@@ -5,18 +5,21 @@
  * capture:        从港华主业务请求保存 Authorization、Cookie、UA、Referer、
  *                 subsId 和 orgId；保险接口使用另一套 Token，不参与抓取。
  * capture-oauth:  从 oauth authorize2（微信 accessToekn / 支付宝 union）响应
- *                 中提取最新 access_token + refresh_token，自动更新 Bearer 并
+ *                 中提取最新 access_token + refresh_token，同时把签发时的
+ *                 clientid + orgCode 作为上下文一并落盘，自动更新 Bearer 并
  *                 启动无限接力链。
  * panel:          读取 BoxJS 共享键，查询账户余额、表数、阶梯和最近账单。
  * refresh:        每隔指定分钟静默查询，并把响应中的新 Cookie 合并回 BoxJS。
  * token-refresh:  接力模式。用最新 refresh_token 换全新的 access_token +
- *                 refresh_token（滚动签发，一次性令牌，须严格串行）。
+ *                 refresh_token（滚动签发，一次性令牌，须严格串行），请求
+ *                 携带与签发时一致的 clientid/orgCode，保证新 token 作用域
+ *                 仍在本燃气公司，否则业务查询会报「户号不存在」。
  * cron:           查询账户数据并推送 Surge 通知。
  */
 
 'use strict';
 
-const VERSION = '1.4.1';
+const VERSION = '1.5.0';
 const API_BASE = 'https://weixin.towngasvcc.com/nv1/vcc-cbs';
 const OAUTH_BASE = 'https://weixin.towngasvcc.com/vcc-oauth/oauth/authorize2';
 const SIGN_SUFFIX = 'hbasesoft.com-prod';
@@ -29,6 +32,14 @@ const KEYS = {
   authorization: 'towngas_authorization',
   refreshToken: 'towngas_refresh_token',
   oauthClient: 'towngas_oauth_client',
+  oauthOrgCode: 'towngas_oauth_org_code',
+  // 签发上下文（JSON: {clientid, orgCode}），与 token 同批写入，续签时原样复用。
+  oauthCtx: 'towngas_oauth_ctx',
+  // 微信端登录先请求 union?clientid=…&redirectUri=…（响应无 token）再走
+  // accessToekn 签发；此键暂存该 clientid，待 accessToekn 签发时消费。
+  oauthPendingClient: 'towngas_oauth_pending_client',
+  // 接力并发锁：面板、两条 cron 与自愈路径可能同分钟触发，refresh_token 一次性。
+  chainLockAt: 'towngas_chain_lock_at',
   tokenIssuedAt: 'towngas_token_issued_at',
   chainBrokeNotifiedAt: 'towngas_chain_broke_notified_at',
   cookie: 'towngas_cookie',
@@ -124,17 +135,6 @@ function queryParams(url) {
   return out;
 }
 
-// 从抓到的 oauth 请求 URL 推断 clientid，供后续 refreshToken 接力复用。
-// 微信端: accessToekn?authCode=…&clientid=pe92a8wechat11118LSJJ0105…
-// 支付宝端: union?authCode=…&clientid=ghaliminipg&orgCode=…
-function oauthClientId(url) {
-  const params = queryParams(url);
-  if (params.clientid) return String(params.clientid);
-  // 微信端进入时 union 请求不带 authCode，redirectUri 里也没有 clientid；
-  // 真正签发发生在 accessToekn，正常流程都能取到。
-  return '';
-}
-
 function endpointName(url) {
   const text = String(url || '');
   const oauth = text.match(/\/oauth\/authorize2\/(accessToekn|union)(?:\?|$)/);
@@ -148,6 +148,8 @@ function endpointName(url) {
 
 // 判断 oauth 响应来自哪个端：支付宝 union 响应直接带 access_token；
 // 微信端 accessToekn 响应同样返回 access_token。两者都从这里换 Bearer。
+// 注意：微信端登录也会先请求 union（不带 authCode，响应无 token），
+// 那一步仅用于预记录 clientid，真正签发在 accessToekn。
 function oauthSource(url) {
   const text = String(url || '');
   if (/\/oauth\/authorize2\/accessToekn/.test(text)) return '微信端';
@@ -177,6 +179,11 @@ function captureOauth() {
     const url = String($request.url || '');
     const source = oauthSource(url);
     if (!source) throw new Error('不是受支持的港华 oauth 接口');
+    const params = queryParams(url);
+    // 微信端登录先请求 union?clientid=…&redirectUri=…（该响应无 token），
+    // 随后才由 accessToekn 签发；而 accessToekn 的 URL 不带 clientid ——
+    // 先从 union 请求预记下 clientid，供签发时落入上下文。
+    if (!params.authCode && params.clientid) write(String(params.clientid), KEYS.oauthPendingClient);
 
     const body = typeof $response !== 'undefined' && $response ? String($response.body || '') : '';
     let payload;
@@ -187,11 +194,24 @@ function captureOauth() {
     const refreshToken = String(payload && payload.refresh_token || '');
     const bearer = 'Bearer ' + token;
     const previousAuth = read(KEYS.authorization);
-    // 原子更新：一次写入 access + refresh + clientid + 签发时间。
+    // 签发上下文与 token 同批落盘，续签时原样复用：
+    //   支付宝端 union 签发：clientid=ghaliminipg 不含城市信息，必须
+    //   同时记录 orgCode（仅出现在 union 请求 URL）；
+    //   微信端 accessToekn 签发：clientid 已由前置 union 预记，城市内嵌其中。
+    // 若续签请求缺失这些参数，oauth 层仍会发新 token，但会话作用域
+    // 不在本燃气公司，业务查询将报「户号不存在」。
+    const isWechat = source === '微信端';
+    const clientId = isWechat
+      ? read(KEYS.oauthPendingClient)
+      : String(params.clientid || read(KEYS.oauthPendingClient) || '');
+    const orgCode = isWechat ? '' : String(params.orgCode || '');
+    write(JSON.stringify({ clientid: clientId, orgCode: orgCode }), KEYS.oauthCtx);
+    write(clientId, KEYS.oauthClient);
+    write(orgCode, KEYS.oauthOrgCode);
+    // 原子更新：一次写入 access + refresh + 上下文 + 签发时间。
     // refresh_token 一次性，旧 access 在 refresh 后立即吊销，任何一步都不可回退。
     write(bearer, KEYS.authorization);
     write(refreshToken, KEYS.refreshToken);
-    write(oauthClientId(url), KEYS.oauthClient);
     write(String(Date.now()), KEYS.tokenIssuedAt);
     // 重新点火即新一代链：重置接力门控，下次接力在 CHAIN_INTERVAL 之后。
     write(String(Date.now()), CHAIN_RUN_KEY);
@@ -341,8 +361,10 @@ function signedOauthUrl(path, params) {
 //   1. refresh_token 一次性，消费即失效 → 只能用最新一代，写入必须原子；
 //   2. refresh 成功后旧 access_token 立即吊销 → 先写 refresh 结果再写 access，
 //      确保任何时刻读到的都是可用的一代；
-//   3. 双端 clientid 不同（微信 pe92a8wechat…/支付宝 ghaliminipg），
-//      clientid 从抓到的 oauth 请求自动记录，接力时复用。
+//   3. 续签必须携带与签发一致的客户端上下文：微信端 clientid（pe92a8wechat…）
+//      内嵌城市，支付宝端 clientid（ghaliminipg）必须另常 orgCode——
+//      否则 oauth 层照样发 token，但作用域不在本燃气公司，查询报「户号不存在」；
+//   4. 上下文（clientid + orgCode）在签发瞬间与 token 同批落入 BoxJS，续签原样复用。
 function postOauth(path, params) {
   return new Promise((resolve, reject) => {
     const url = signedOauthUrl(path, params);
@@ -366,13 +388,33 @@ function postOauth(path, params) {
   });
 }
 
+// 读取签发上下文（JSON）；旧版本仅存 clientid 时向后兼容。
+function oauthContext() {
+  try {
+    const parsed = JSON.parse(read(KEYS.oauthCtx));
+    if (parsed && typeof parsed === 'object') {
+      return { clientid: String(parsed.clientid || ''), orgCode: String(parsed.orgCode || '') };
+    }
+  } catch (_) {}
+  return { clientid: read(KEYS.oauthClient), orgCode: read(KEYS.oauthOrgCode) };
+}
+
 // 执行一次接力；成功则原子更新两个 token 并返回新 access。
+// 返回空串表示被并发锁跳过（另一路正在接力），非失败。
 async function chainRefresh() {
   const refreshToken = read(KEYS.refreshToken);
   if (!refreshToken) throw new Error('没有 refresh_token，请打开港华小程序重新抓取');
+  // 并发保护：面板、两条 cron 与自愈路径可能在同一分钟触发接力；refresh_token
+  // 一次性，并发会让后到的一方拿到 90143 误报断链。120 秒内的重复尝试直接跳过。
+  const lockAge = Date.now() - numberValue(read(KEYS.chainLockAt));
+  if (lockAge >= 0 && lockAge < 120000) return '';
+  write(String(Date.now()), KEYS.chainLockAt);
+  const context = oauthContext();
   const params = { refreshToken: refreshToken };
-  const clientId = read(KEYS.oauthClient);
-  if (clientId) params.clientid = clientId;
+  if (context.clientid) params.clientid = context.clientid;
+  // 支付宝端 clientid（ghaliminipg）不含城市信息，必须携带签发时的 orgCode，
+  // 否则 oauth 层虽能续出 token，但作用域不在本燃气公司，查询会报「户号不存在」。
+  if (context.orgCode) params.orgCode = context.orgCode;
   const payload = await postOauth('/refreshToken', params);
   const access = String(payload && payload.access_token || '');
   const nextRefresh = String(payload && payload.refresh_token || '');
@@ -410,8 +452,10 @@ async function tokenRefresh() {
   if (!read(KEYS.refreshToken)) return finish({}); // 还没抓到过 oauth，静默等待首次打开小程序
   try {
     const access = await chainRefresh();
-    write(String(Date.now()), CHAIN_RUN_KEY);
-    if (read(KEYS.debug) === '1') console.log('[towngas ' + VERSION + '] 接力成功 access ' + mask(access));
+    if (access) {
+      write(String(Date.now()), CHAIN_RUN_KEY);
+      if (read(KEYS.debug) === '1') console.log('[towngas ' + VERSION + '] 接力成功 access ' + mask(access));
+    }
   } catch (error) {
     const message = String((error && error.message) || error);
     console.log('[towngas ' + VERSION + '] 接力失败（10 分钟后重试）: ' + message);
@@ -531,6 +575,15 @@ function billText(bill) {
     : '暂无历史账单';
 }
 
+function queryErrorText(error) {
+  const message = String((error && error.message) || error);
+  // 续签出的 token 作用域异常时，业务层最典型的报错就是「户号不存在」；
+  // 附上可操作的提示，避免误以为户号配置丢了。
+  return /不存在/.test(message)
+    ? message + '\n（多为续签 token 作用域异常：打开一次港华小程序重新点火即可修复）'
+    : message;
+}
+
 async function panel() {
   try {
     const data = await queryAccount();
@@ -545,7 +598,7 @@ async function panel() {
   } catch (error) {
     finish({
       title: '港华燃气',
-      content: String((error && error.message) || error),
+      content: queryErrorText(error),
       icon: 'exclamationmark.triangle.fill',
       'icon-color': '#FF9F0A',
     });
@@ -584,7 +637,7 @@ async function cron() {
     if (typeof $notification !== 'undefined') $notification.post(title, subtitle, body);
   } catch (error) {
     if (typeof $notification !== 'undefined') {
-      $notification.post((read(KEYS.title) || '港华燃气') + '：查询失败', '', '[' + VERSION + '] ' + String((error && error.message) || error));
+      $notification.post((read(KEYS.title) || '港华燃气') + '：查询失败', '', '[' + VERSION + '] ' + queryErrorText(error));
     }
   }
   finish({});

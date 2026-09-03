@@ -11,6 +11,8 @@
         "towngas_authorization",
         "towngas_refresh_token",
         "towngas_oauth_client",
+        "towngas_oauth_org_code",
+        "towngas_oauth_ctx",
         "towngas_token_issued_at",
         "towngas_cookie",
         "towngas_ua",
@@ -90,6 +92,13 @@
           "val": "",
           "type": "text",
           "desc": "由 Surge 自动记录（微信/支付宝端不同），接力续签时自动复用"
+        },
+        {
+          "id": "towngas_oauth_org_code",
+          "name": "oauth orgCode",
+          "val": "",
+          "type": "text",
+          "desc": "由 Surge 自动记录；支付宝端续签必须携带（如 11118_LSJJ0105），缺失会导致续出的 token 查不到户号"
         },
         {
           "id": "towngas_token_issued_at",
