@@ -23,5 +23,8 @@ towngas-account-cron = type=cron, cronexp="{{{cronexp}}}", timeout=30, wake-syst
 # 打开港华页面即可从 getLoginUserInfo / queryBindList 更新主业务 Bearer；进入充值购气页补齐 subsId / orgId。
 towngas-account-capture = type=http-request, pattern=^https://weixin\.towngasvcc\.com/nv1/vcc-cbs/(?:usersubs/(?:getLoginUserInfo|queryBindList)|charge/(?:preCheck|gasStepFee|queryHistoryFee))(?:\?|$), requires-body=0, timeout=10, script-path=https://raw.githubusercontent.com/yourswoo/surge-module/refs/heads/gasbill/towngas.js, argument=mode=capture
 
+# 登录瞬间自动换新 Bearer：微信端 accessToekn 与支付宝端 union 响应都返回 access_token，抓取后直接写入 BoxJS。
+towngas-oauth-capture = type=http-response, pattern=^https://weixin\.towngasvcc\.com/vcc-oauth/oauth/authorize2/(?:accessToekn|union)(?:\?|$), requires-body=1, timeout=10, script-path=https://raw.githubusercontent.com/yourswoo/surge-module/refs/heads/gasbill/towngas.js, argument=mode=capture-oauth
+
 [MITM]
 hostname = %APPEND% weixin.towngasvcc.com

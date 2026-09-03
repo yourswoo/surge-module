@@ -1,17 +1,19 @@
 /*
  * 港华燃气账户查询·Surge 抓取与面板
- * v1.2.0
+ * v1.3.0
  *
- * capture: 从港华主业务请求保存 Authorization、Cookie、UA、Referer、
- *          subsId 和 orgId；保险接口使用另一套 Token，不参与抓取。
- * panel:   读取 BoxJS 共享键，查询账户余额、表数、阶梯和最近账单。
- * refresh: 每隔指定分钟静默查询，并把响应中的新 Cookie 合并回 BoxJS。
- * cron:    查询账户数据并推送 Surge 通知。
+ * capture:        从港华主业务请求保存 Authorization、Cookie、UA、Referer、
+ *                 subsId 和 orgId；保险接口使用另一套 Token，不参与抓取。
+ * capture-oauth:  从 oauth authorize2（微信 accessToekn / 支付宝 union）响应
+ *                 中提取最新 access_token，自动更新 Bearer。
+ * panel:          读取 BoxJS 共享键，查询账户余额、表数、阶梯和最近账单。
+ * refresh:        每隔指定分钟静默查询，并把响应中的新 Cookie 合并回 BoxJS。
+ * cron:           查询账户数据并推送 Surge 通知。
  */
 
 'use strict';
 
-const VERSION = '1.2.0';
+const VERSION = '1.3.0';
 const API_BASE = 'https://weixin.towngasvcc.com/nv1/vcc-cbs';
 const SIGN_SUFFIX = 'hbasesoft.com-prod';
 const SESSION_RUN_KEY = 'towngas_session_refresh_at';
@@ -112,10 +114,21 @@ function queryParams(url) {
 
 function endpointName(url) {
   const text = String(url || '');
+  const oauth = text.match(/\/oauth\/authorize2\/(accessToekn|union)(?:\?|$)/);
+  if (oauth) return oauth[1];
   const charge = text.match(/\/charge\/(preCheck|gasStepFee|queryHistoryFee)(?:\?|$)/);
   if (charge) return charge[1];
   const usersubs = text.match(/\/usersubs\/(getLoginUserInfo|queryBindList)(?:\?|$)/);
   if (usersubs) return usersubs[1];
+  return '';
+}
+
+// 判断 oauth 响应来自哪个端：支付宝 union 响应直接带 access_token；
+// 微信端 accessToekn 响应同样返回 access_token。两者都从这里换 Bearer。
+function oauthSource(url) {
+  const text = String(url || '');
+  if (/\/oauth\/authorize2\/accessToekn/.test(text)) return '微信端';
+  if (/\/oauth\/authorize2\/union/.test(text)) return '支付宝端';
   return '';
 }
 
@@ -124,6 +137,52 @@ function mask(value) {
   if (!text) return '缺失';
   if (text.length < 9) return '已获取';
   return text.slice(0, 4) + '…' + text.slice(-4);
+}
+
+function notifyCapture(title, subtitle, body) {
+  if (read(KEYS.captureNotify) !== '0' && typeof $notification !== 'undefined') {
+    $notification.post(title, subtitle, body);
+  }
+}
+
+// 从 oauth 响应体提取 access_token 并更新 Bearer。
+// 微信端: POST /vcc-oauth/oauth/authorize2/accessToekn?authCode=… → {access_token, refresh_token, expires_in}
+// 支付宝端: POST /vcc-oauth/oauth/authorize2/union?authCode=… → {access_token, refresh_token, expires_in}
+function captureOauth() {
+  try {
+    if (typeof $request === 'undefined') throw new Error('oauth 抓取模式未获取请求');
+    const url = String($request.url || '');
+    const source = oauthSource(url);
+    if (!source) throw new Error('不是受支持的港华 oauth 接口');
+
+    const body = typeof $response !== 'undefined' && $response ? String($response.body || '') : '';
+    let payload;
+    try { payload = JSON.parse(body); } catch (_) { throw new Error('oauth 响应非 JSON'); }
+    const token = String(payload && payload.access_token || '');
+    if (!token) throw new Error('oauth 响应缺少 access_token');
+
+    const bearer = 'Bearer ' + token;
+    const previousAuth = read(KEYS.authorization);
+    write(bearer, KEYS.authorization);
+    write(new Date().toISOString(), KEYS.capturedAt);
+
+    if (bearer !== previousAuth) {
+      notifyCapture(
+        '燃气 Bearer 已自动更新（' + source + '）',
+        'access_token ' + mask(token),
+        '新 Bearer 已写入 BoxJS，有效期约 ' + (Number(payload.expires_in) || 7200) / 3600 + ' 小时'
+      );
+    }
+    if (read(KEYS.debug) === '1') console.log('[towngas ' + VERSION + '] oauth token captured from ' + source);
+  } catch (error) {
+    const message = String((error && error.message) || error);
+    console.log('[towngas ' + VERSION + '] ' + message);
+    if (read(KEYS.debug) === '1' && typeof $notification !== 'undefined') {
+      $notification.post('燃气 oauth 抓取失败', '', message);
+    }
+  } finally {
+    finish({});
+  }
 }
 
 function finish(value) {
@@ -156,8 +215,8 @@ function capture() {
     const currentAuth = read(KEYS.authorization);
     const authChanged = currentAuth && currentAuth !== previousAuth;
     const complete = !!(currentAuth && read(KEYS.subsId) && read(KEYS.orgId));
-    if (read(KEYS.captureNotify) !== '0' && (authChanged || (!beforeComplete && complete)) && typeof $notification !== 'undefined') {
-      $notification.post(
+    if (authChanged || (!beforeComplete && complete)) {
+      notifyCapture(
         '燃气查询配置已更新',
         name + ' · 户号 ' + mask(params.subsId || read(KEYS.subsId)),
         complete ? 'Bearer、户号 ID 和燃气公司 ID 已齐全' : '请进入充值购气页补齐账户 ID'
@@ -398,6 +457,7 @@ async function cron() {
 
 (async function main() {
   if (MODE === 'capture') return capture();
+  if (MODE === 'capture-oauth') return captureOauth();
   if (MODE === 'refresh') return await refresh();
   if (MODE === 'cron') return await cron();
   return await panel();

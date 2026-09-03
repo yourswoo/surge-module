@@ -63,7 +63,7 @@
           "name": "抓取成功通知",
           "val": "1",
           "type": "text",
-          "desc": "1 开启，0 关闭"
+          "desc": "1 开启，0 关闭；Bearer 换新（微信/支付宝登录）、配置抓取均会通知"
         },
         {
           "id": "towngas_authorization",
@@ -71,7 +71,7 @@
           "val": "",
           "type": "textarea",
           "rows": 3,
-          "desc": "打开港华页面后由 Surge 从主业务请求自动更新，请勿对外分享"
+          "desc": "打开港华页面后由 Surge 从主业务请求自动更新；微信/支付宝登录时也会从 oauth 响应自动换新，请勿对外分享"
         },
         {
           "id": "towngas_cookie",
