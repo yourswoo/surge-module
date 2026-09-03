@@ -1,24 +1,35 @@
 /*
  * 港华燃气账户查询·Surge 抓取与面板
- * v1.3.0
+ * v1.4.0
  *
  * capture:        从港华主业务请求保存 Authorization、Cookie、UA、Referer、
  *                 subsId 和 orgId；保险接口使用另一套 Token，不参与抓取。
  * capture-oauth:  从 oauth authorize2（微信 accessToekn / 支付宝 union）响应
- *                 中提取最新 access_token，自动更新 Bearer。
+ *                 中提取最新 access_token + refresh_token，自动更新 Bearer 并
+ *                 启动无限接力链。
  * panel:          读取 BoxJS 共享键，查询账户余额、表数、阶梯和最近账单。
  * refresh:        每隔指定分钟静默查询，并把响应中的新 Cookie 合并回 BoxJS。
+ * token-refresh:  接力模式。用最新 refresh_token 换全新的 access_token +
+ *                 refresh_token（滚动签发，一次性令牌，须严格串行）。
  * cron:           查询账户数据并推送 Surge 通知。
  */
 
 'use strict';
 
-const VERSION = '1.3.0';
+const VERSION = '1.4.0';
 const API_BASE = 'https://weixin.towngasvcc.com/nv1/vcc-cbs';
+const OAUTH_BASE = 'https://weixin.towngasvcc.com/vcc-oauth/oauth/authorize2';
 const SIGN_SUFFIX = 'hbasesoft.com-prod';
 const SESSION_RUN_KEY = 'towngas_session_refresh_at';
+const CHAIN_RUN_KEY = 'towngas_chain_refresh_at';
+// 接力安全间隔：access/refresh token 均为 2 小时固定过期，100 分钟刷新留 20 分钟余量。
+const CHAIN_INTERVAL_MS = 100 * 60 * 1000;
 const KEYS = {
   authorization: 'towngas_authorization',
+  refreshToken: 'towngas_refresh_token',
+  oauthClient: 'towngas_oauth_client',
+  tokenIssuedAt: 'towngas_token_issued_at',
+  chainBrokeNotifiedAt: 'towngas_chain_broke_notified_at',
   cookie: 'towngas_cookie',
   userAgent: 'towngas_ua',
   referer: 'towngas_referer',
@@ -112,6 +123,17 @@ function queryParams(url) {
   return out;
 }
 
+// 从抓到的 oauth 请求 URL 推断 clientid，供后续 refreshToken 接力复用。
+// 微信端: accessToekn?authCode=…&clientid=pe92a8wechat11118LSJJ0105…
+// 支付宝端: union?authCode=…&clientid=ghaliminipg&orgCode=…
+function oauthClientId(url) {
+  const params = queryParams(url);
+  if (params.clientid) return String(params.clientid);
+  // 微信端进入时 union 请求不带 authCode，redirectUri 里也没有 clientid；
+  // 真正签发发生在 accessToekn，正常流程都能取到。
+  return '';
+}
+
 function endpointName(url) {
   const text = String(url || '');
   const oauth = text.match(/\/oauth\/authorize2\/(accessToekn|union)(?:\?|$)/);
@@ -161,16 +183,24 @@ function captureOauth() {
     const token = String(payload && payload.access_token || '');
     if (!token) throw new Error('oauth 响应缺少 access_token');
 
+    const refreshToken = String(payload && payload.refresh_token || '');
     const bearer = 'Bearer ' + token;
     const previousAuth = read(KEYS.authorization);
+    // 原子更新：一次写入 access + refresh + clientid + 签发时间。
+    // refresh_token 一次性，旧 access 在 refresh 后立即吊销，任何一步都不可回退。
     write(bearer, KEYS.authorization);
+    write(refreshToken, KEYS.refreshToken);
+    write(oauthClientId(url), KEYS.oauthClient);
+    write(String(Date.now()), KEYS.tokenIssuedAt);
     write(new Date().toISOString(), KEYS.capturedAt);
 
     if (bearer !== previousAuth) {
       notifyCapture(
         '燃气 Bearer 已自动更新（' + source + '）',
         'access_token ' + mask(token),
-        '新 Bearer 已写入 BoxJS，有效期约 ' + (Number(payload.expires_in) || 7200) / 3600 + ' 小时'
+        refreshToken
+          ? '接力链已启动，有效期约 ' + (Number(payload.expires_in) || 7200) / 3600 + ' 小时，之后自动续签'
+          : '新 Bearer 已写入 BoxJS，有效期约 ' + (Number(payload.expires_in) || 7200) / 3600 + ' 小时'
       );
     }
     if (read(KEYS.debug) === '1') console.log('[towngas ' + VERSION + '] oauth token captured from ' + source);
@@ -295,6 +325,97 @@ function signedUrl(path, params) {
   return API_BASE + path + '?' + query.join('&');
 }
 
+function signedOauthUrl(path, params) {
+  const all = Object.assign({}, params, { timestamp: String(Date.now()) });
+  const query = Object.keys(all).map(key => encodeURIComponent(key) + '=' + encodeURIComponent(String(all[key])));
+  query.push('sign=' + requestSign(all));
+  return OAUTH_BASE + path + '?' + query.join('&');
+}
+
+// ===== 无限接力链 =====
+// refreshToken 接口用最新 refresh_token 换全新一对 token（滚动签发）。
+// 规则（均已实测）：
+//   1. refresh_token 一次性，消费即失效 → 只能用最新一代，写入必须原子；
+//   2. refresh 成功后旧 access_token 立即吊销 → 先写 refresh 结果再写 access，
+//      确保任何时刻读到的都是可用的一代；
+//   3. 双端 clientid 不同（微信 pe92a8wechat…/支付宝 ghaliminipg），
+//      clientid 从抓到的 oauth 请求自动记录，接力时复用。
+function postOauth(path, params) {
+  return new Promise((resolve, reject) => {
+    const url = signedOauthUrl(path, params);
+    const headers = {
+      Accept: '*/*',
+      'Content-Type': 'application/json',
+      'User-Agent': read(KEYS.userAgent) || 'Mozilla/5.0 (iPhone; CPU iPhone OS 27_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 MicroMessenger/8.0.76(0x18004c31) NetType/WIFI Language/zh_CN',
+      Origin: 'https://weixin.towngasvcc.com',
+      Referer: read(KEYS.referer) || 'https://weixin.towngasvcc.com/h5-gas/pages/transitionPage/index',
+    };
+    const cookie = read(KEYS.cookie);
+    if (cookie) headers.Cookie = cookie;
+    $httpClient.post({ url: url, headers: headers, body: '', timeout: 15 }, (error, response, body) => {
+      if (error) return reject(new Error('refresh 请求失败: ' + error));
+      mergeResponseCookies((response && response.headers) || {});
+      let payload;
+      try { payload = JSON.parse(body || ''); }
+      catch (_) { return reject(new Error('refresh 返回非 JSON')); }
+      resolve(payload);
+    });
+  });
+}
+
+// 执行一次接力；成功则原子更新两个 token 并返回新 access。
+async function chainRefresh() {
+  const refreshToken = read(KEYS.refreshToken);
+  if (!refreshToken) throw new Error('没有 refresh_token，请打开港华小程序重新抓取');
+  const params = { refreshToken: refreshToken };
+  const clientId = read(KEYS.oauthClient);
+  if (clientId) params.clientid = clientId;
+  const payload = await postOauth('/refreshToken', params);
+  const access = String(payload && payload.access_token || '');
+  const nextRefresh = String(payload && payload.refresh_token || '');
+  if (!access || !nextRefresh) {
+    throw new Error('refresh 失败: ' + String(payload && (payload.resultMsg || payload.resultCode) || '响应缺少 token'));
+  }
+  // 先写新 refresh_token（接力链下一代），再写 access，最后刷时间戳。
+  write(nextRefresh, KEYS.refreshToken);
+  write('Bearer ' + access, KEYS.authorization);
+  write(String(Date.now()), KEYS.tokenIssuedAt);
+  return access;
+}
+
+function notifyChainBroken(reason) {
+  // 断链提醒限流：同一根断链只提醒一次（1 小时内），重新抓取后自动复位。
+  const last = numberValue(read(KEYS.chainBrokeNotifiedAt));
+  if (last && Date.now() - last < 60 * 60000) return;
+  write(String(Date.now()), KEYS.chainBrokeNotifiedAt);
+  if (typeof $notification !== 'undefined') {
+    $notification.post(
+      '燃气接力链已断开',
+      reason,
+      '请打开一次微信或支付宝里的港华小程序，自动重新抓取'
+    );
+  }
+}
+
+// token-refresh 模式：cron 每 10 分钟检查，距上次接力满 100 分钟才刷新。
+// 若接力失败（refresh_token 已死），限流提醒用户重新打开小程序。
+async function tokenRefresh() {
+  const now = Date.now();
+  const last = numberValue(read(CHAIN_RUN_KEY));
+  if (last && now - last < CHAIN_INTERVAL_MS) return finish({});
+  if (!read(KEYS.refreshToken)) return finish({}); // 还没抓到过 oauth，静默等待首次打开小程序
+  write(String(now), CHAIN_RUN_KEY);
+  try {
+    const access = await chainRefresh();
+    if (read(KEYS.debug) === '1') console.log('[towngas ' + VERSION + '] 接力成功 access ' + mask(access));
+  } catch (error) {
+    const message = String((error && error.message) || error);
+    console.log('[towngas ' + VERSION + '] 接力失败: ' + message);
+    notifyChainBroken(message);
+  }
+  finish({});
+}
+
 function requestJson(path, params, label) {
   return new Promise((resolve, reject) => {
     const url = signedUrl(path, params);
@@ -364,6 +485,16 @@ async function queryAccount() {
   if (!subsId) missing.push('subsId');
   if (!orgId) missing.push('orgId');
   if (missing.length) throw new Error('缺少 ' + missing.join('、') + '，请打开港华燃气和充值购气页');
+  // 自愈：若 access_token 年龄超过安全间隔且手上有 refresh_token，先接力再查。
+  // 覆盖 cron 停摆（设备关机/休眠）后 token 过期的场景，面板仍能自动恢复。
+  const issuedAt = numberValue(read(KEYS.tokenIssuedAt));
+  if (issuedAt && Date.now() - issuedAt > CHAIN_INTERVAL_MS && read(KEYS.refreshToken)) {
+    try { await chainRefresh(); } catch (error) {
+      const message = String((error && error.message) || error);
+      console.log('[towngas ' + VERSION + '] 面板自愈接力失败: ' + message);
+      if (/90143|refreshToken/.test(message)) notifyChainBroken(message);
+    }
+  }
   const results = await Promise.all([
     requestJson('/charge/preCheck', { subsId: subsId }, '账户概览'),
     requestJson('/charge/gasStepFee', { subsId: subsId, orgId: orgId }, '阶梯气价'),
@@ -459,6 +590,7 @@ async function cron() {
   if (MODE === 'capture') return capture();
   if (MODE === 'capture-oauth') return captureOauth();
   if (MODE === 'refresh') return await refresh();
+  if (MODE === 'token-refresh') return await tokenRefresh();
   if (MODE === 'cron') return await cron();
   return await panel();
 })();

@@ -9,6 +9,9 @@
       "name": "燃气余额与账单",
       "keys": [
         "towngas_authorization",
+        "towngas_refresh_token",
+        "towngas_oauth_client",
+        "towngas_token_issued_at",
         "towngas_cookie",
         "towngas_ua",
         "towngas_referer",
@@ -72,6 +75,28 @@
           "type": "textarea",
           "rows": 3,
           "desc": "打开港华页面后由 Surge 从主业务请求自动更新；微信/支付宝登录时也会从 oauth 响应自动换新，请勿对外分享"
+        },
+        {
+          "id": "towngas_refresh_token",
+          "name": "refresh_token（接力令牌）",
+          "val": "",
+          "type": "textarea",
+          "rows": 3,
+          "desc": "由 Surge 从 oauth 响应自动抓取；每 100 分钟自动接力续签，一次性令牌请勿手动修改，请勿对外分享"
+        },
+        {
+          "id": "towngas_oauth_client",
+          "name": "oauth clientid",
+          "val": "",
+          "type": "text",
+          "desc": "由 Surge 自动记录（微信/支付宝端不同），接力续签时自动复用"
+        },
+        {
+          "id": "towngas_token_issued_at",
+          "name": "token 签发时间",
+          "val": "",
+          "type": "text",
+          "desc": "由 Surge 自动更新；用于判断何时接力"
         },
         {
           "id": "towngas_cookie",
