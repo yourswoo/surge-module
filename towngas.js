@@ -1,6 +1,6 @@
 /*
  * 港华燃气账户查询·Surge 抓取与面板
- * v1.4.0
+ * v1.4.1
  *
  * capture:        从港华主业务请求保存 Authorization、Cookie、UA、Referer、
  *                 subsId 和 orgId；保险接口使用另一套 Token，不参与抓取。
@@ -16,14 +16,15 @@
 
 'use strict';
 
-const VERSION = '1.4.0';
+const VERSION = '1.4.1';
 const API_BASE = 'https://weixin.towngasvcc.com/nv1/vcc-cbs';
 const OAUTH_BASE = 'https://weixin.towngasvcc.com/vcc-oauth/oauth/authorize2';
 const SIGN_SUFFIX = 'hbasesoft.com-prod';
 const SESSION_RUN_KEY = 'towngas_session_refresh_at';
 const CHAIN_RUN_KEY = 'towngas_chain_refresh_at';
-// 接力安全间隔：access/refresh token 均为 2 小时固定过期，100 分钟刷新留 20 分钟余量。
-const CHAIN_INTERVAL_MS = 100 * 60 * 1000;
+// 接力安全间隔：access/refresh token 均为 2 小时固定过期，80 分钟刷新留 40 分钟余量，
+// 容忍 cron 延迟或一次失败重试；失败不写门控，下个周期（10 分钟后）即重试。
+const CHAIN_INTERVAL_MS = 80 * 60 * 1000;
 const KEYS = {
   authorization: 'towngas_authorization',
   refreshToken: 'towngas_refresh_token',
@@ -192,6 +193,8 @@ function captureOauth() {
     write(refreshToken, KEYS.refreshToken);
     write(oauthClientId(url), KEYS.oauthClient);
     write(String(Date.now()), KEYS.tokenIssuedAt);
+    // 重新点火即新一代链：重置接力门控，下次接力在 CHAIN_INTERVAL 之后。
+    write(String(Date.now()), CHAIN_RUN_KEY);
     write(new Date().toISOString(), KEYS.capturedAt);
 
     if (bearer !== previousAuth) {
@@ -397,20 +400,21 @@ function notifyChainBroken(reason) {
   }
 }
 
-// token-refresh 模式：cron 每 10 分钟检查，距上次接力满 100 分钟才刷新。
-// 若接力失败（refresh_token 已死），限流提醒用户重新打开小程序。
+// token-refresh 模式：cron 每 10 分钟检查，距上次成功接力满 CHAIN_INTERVAL 才刷新。
+// 门控只在接力成功后写入：失败时下个周期立即重试，既不掉链子，也意味着
+// 用户重新打开小程序点火后，10 分钟内 cron 会自动用新 token 接回链。
 async function tokenRefresh() {
   const now = Date.now();
   const last = numberValue(read(CHAIN_RUN_KEY));
   if (last && now - last < CHAIN_INTERVAL_MS) return finish({});
   if (!read(KEYS.refreshToken)) return finish({}); // 还没抓到过 oauth，静默等待首次打开小程序
-  write(String(now), CHAIN_RUN_KEY);
   try {
     const access = await chainRefresh();
+    write(String(Date.now()), CHAIN_RUN_KEY);
     if (read(KEYS.debug) === '1') console.log('[towngas ' + VERSION + '] 接力成功 access ' + mask(access));
   } catch (error) {
     const message = String((error && error.message) || error);
-    console.log('[towngas ' + VERSION + '] 接力失败: ' + message);
+    console.log('[towngas ' + VERSION + '] 接力失败（10 分钟后重试）: ' + message);
     notifyChainBroken(message);
   }
   finish({});

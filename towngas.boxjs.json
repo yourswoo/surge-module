@@ -82,7 +82,7 @@
           "val": "",
           "type": "textarea",
           "rows": 3,
-          "desc": "由 Surge 从 oauth 响应自动抓取；每 100 分钟自动接力续签，一次性令牌请勿手动修改，请勿对外分享"
+          "desc": "由 Surge 从 oauth 响应自动抓取；每 80 分钟自动接力续签（失败 10 分钟重试），一次性令牌请勿手动修改，请勿对外分享"
         },
         {
           "id": "towngas_oauth_client",
